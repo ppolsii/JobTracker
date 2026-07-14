@@ -1,0 +1,674 @@
+# BUSINESS_RULES.md
+
+Version: 1.0
+
+---
+
+# Purpose
+
+This document defines every business rule of JobTracker Insights.
+
+These rules are mandatory.
+
+Claude MUST implement the application respecting these rules.
+
+If implementation conflicts with these rules, this document takes precedence.
+
+---
+
+# General Principles
+
+The application is single-tenant.
+
+Every user owns their own data.
+
+No information is shared between users.
+
+Analytics are always calculated using only the owner's data.
+
+The application never compares users.
+
+There is no global ranking.
+
+---
+
+# User Ownership
+
+Every entity belongs to exactly one user.
+
+Tables affected:
+
+- Applications
+- Companies
+- CV Versions
+- Notes
+- Status History
+
+A user can NEVER access another user's information.
+
+All database access must be protected through Row Level Security (RLS).
+
+---
+
+# Authentication
+
+Authentication is mandatory.
+
+Anonymous users cannot use the application.
+
+Authentication is handled only through Supabase Auth.
+
+Passwords are never stored by the application.
+
+JWT tokens are managed by Supabase.
+
+---
+
+# Application Lifecycle
+
+Every application follows a lifecycle.
+
+The lifecycle is immutable.
+
+Allowed states:
+
+Wishlist
+
+↓
+
+Applied
+
+↓
+
+Recruiter Contact
+
+↓
+
+HR Interview
+
+↓
+
+Technical Interview
+
+↓
+
+Final Interview
+
+↓
+
+Offer
+
+↓
+
+Accepted
+
+or
+
+Rejected
+
+---
+
+# Allowed State Transitions
+
+Valid transitions:
+
+Wishlist
+→ Applied
+
+Applied
+→ Recruiter Contact
+
+Recruiter Contact
+→ HR Interview
+
+HR Interview
+→ Technical Interview
+
+Technical Interview
+→ Final Interview
+
+Final Interview
+→ Offer
+
+Offer
+→ Accepted
+
+Offer
+→ Rejected
+
+Recruiter Contact
+→ Rejected
+
+HR Interview
+→ Rejected
+
+Technical Interview
+→ Rejected
+
+Final Interview
+→ Rejected
+
+Applied
+→ Rejected
+
+---
+
+Invalid examples
+
+Accepted
+→ Applied
+
+Rejected
+→ Technical Interview
+
+Wishlist
+→ Offer
+
+Offer
+→ HR Interview
+
+These transitions MUST be rejected.
+
+---
+
+# Status History
+
+Every status change must generate a history record.
+
+The history cannot be modified.
+
+The history cannot be deleted.
+
+History is append-only.
+
+Each record contains:
+
+Application ID
+
+Previous Status
+
+New Status
+
+Timestamp
+
+User ID
+
+---
+
+# Applications
+
+Every application must belong to:
+
+One user.
+
+One company.
+
+One CV version.
+
+Applications cannot exist without these relationships.
+
+---
+
+# Required Fields
+
+Company
+
+Position
+
+Application Date
+
+Current Status
+
+CV Version
+
+Everything else is optional.
+
+---
+
+# Company Rules
+
+Companies are unique per user.
+
+Example
+
+User A
+
+Google
+
+User B
+
+Google
+
+These are different records.
+
+Companies are never global.
+
+---
+
+A company cannot be deleted if applications reference it.
+
+Possible approaches:
+
+Soft delete
+
+or
+
+Prevent deletion.
+
+Prefer preventing deletion.
+
+---
+
+# CV Rules
+
+Users may create multiple CV versions.
+
+Examples
+
+Backend v1
+
+Backend v2
+
+Frontend
+
+Full Stack
+
+DevOps
+
+Every application references exactly one CV version.
+
+A CV version cannot be deleted while applications reference it.
+
+---
+
+# Duplicate Applications
+
+Users may apply multiple times to the same company.
+
+Different positions are allowed.
+
+Different dates are allowed.
+
+Different CV versions are allowed.
+
+Therefore duplicates are allowed.
+
+---
+
+# Analytics Rules
+
+Analytics are always generated from historical data.
+
+Never estimate.
+
+Never predict.
+
+Never invent information.
+
+Only calculate using stored records.
+
+---
+
+Example
+
+GOOD
+
+Response Rate
+
+Responses
+
+/
+
+Applications
+
+BAD
+
+"This company usually likes backend developers."
+
+Unless supported by user data.
+
+---
+
+# Dashboard Rules
+
+Dashboard data must always be real-time.
+
+Every application change should immediately affect:
+
+KPIs
+
+Charts
+
+Analytics
+
+No nightly jobs.
+
+No delayed calculations.
+
+---
+
+# Notes
+
+Applications may contain notes.
+
+Notes belong to exactly one application.
+
+Markdown is supported.
+
+Rich text is not.
+
+---
+
+# Soft Deletes
+
+No business entity should be physically deleted.
+
+Applications
+
+Companies
+
+CV Versions
+
+Should use:
+
+deleted_at timestamp
+
+instead of DELETE.
+
+This preserves analytics consistency.
+
+---
+
+# Time
+
+All timestamps stored in UTC.
+
+Displayed using user's local timezone.
+
+---
+
+# Date Handling
+
+Application Date
+
+Represents when the application was submitted.
+
+Status timestamps
+
+Represent when each stage occurred.
+
+These dates must never be inferred.
+
+---
+
+# Metrics Integrity
+
+Changing historical information changes analytics.
+
+Therefore:
+
+Editing dates should require confirmation.
+
+Deleting applications should require confirmation.
+
+Deleting historical records is forbidden.
+
+---
+
+# User Permissions
+
+Users may
+
+Create
+
+Read
+
+Update
+
+Soft Delete
+
+their own entities.
+
+Users may never
+
+Access other users.
+
+Modify analytics manually.
+
+Modify history.
+
+Bypass workflow.
+
+---
+
+# Business Constraints
+
+Applications must always have:
+
+Exactly one company.
+
+Exactly one CV.
+
+Exactly one current status.
+
+Exactly one owner.
+
+---
+
+Companies may have
+
+Zero or many applications.
+
+---
+
+CV Versions may have
+
+Zero or many applications.
+
+---
+
+Status History may have
+
+One or many records per application.
+
+---
+
+# Search
+
+Search only returns user owned data.
+
+Search must be case insensitive.
+
+Search must support partial matching.
+
+Search fields
+
+Company
+
+Position
+
+Notes
+
+Tags (future)
+
+---
+
+# Filtering
+
+Supported filters
+
+Status
+
+Company
+
+CV Version
+
+Source
+
+Work Mode
+
+Application Date
+
+Salary Range
+
+---
+
+Filters must be combinable.
+
+Example
+
+Status = Technical Interview
+
+AND
+
+Work Mode = Remote
+
+AND
+
+CV = Backend v2
+
+---
+
+# Sorting
+
+Applications can be sorted by
+
+Application Date
+
+Company
+
+Position
+
+Current Status
+
+Last Updated
+
+Response Time
+
+Ascending
+
+Descending
+
+---
+
+# Export
+
+Users own their data.
+
+Users must be able to export all their information.
+
+Preferred formats
+
+CSV
+
+JSON
+
+PDF belongs to future versions.
+
+---
+
+# Performance Rules
+
+Analytics must be calculated efficiently.
+
+Avoid loading all applications into memory.
+
+Prefer SQL aggregation.
+
+Avoid client-side calculations whenever possible.
+
+---
+
+# Security Rules
+
+Never trust client input.
+
+Validate every request.
+
+Validate every UUID.
+
+Validate every enum.
+
+Validate every date.
+
+Never expose internal IDs unnecessarily.
+
+Never expose Service Role Key.
+
+---
+
+# Error Handling
+
+Business errors should return meaningful messages.
+
+Example
+
+GOOD
+
+"This CV version is currently used by 14 applications."
+
+BAD
+
+"500 Internal Server Error"
+
+---
+
+# Auditability
+
+Important operations should be auditable.
+
+Status changes
+
+Application deletion
+
+Company deletion attempts
+
+CV deletion attempts
+
+Should be logged.
+
+---
+
+# Future Compatibility
+
+The current data model must support future additions.
+
+Examples
+
+Interview feedback
+
+Salary tracking
+
+Browser Extension
+
+Google Calendar
+
+LinkedIn Import
+
+Without requiring breaking schema changes.
+
+---
+
+# Claude Instructions
+
+Treat this document as immutable.
+
+Never bypass business rules.
+
+Never simplify workflow.
+
+Never create hidden shortcuts.
+
+Never automatically fix invalid data.
+
+Reject invalid operations.
+
+Preserve data integrity above user convenience.
+
+Whenever two implementations are possible:
+
+Choose the one that better preserves historical information.
+
+Never delete information if soft delete is possible.
+
+Business rules are more important than implementation simplicity.
