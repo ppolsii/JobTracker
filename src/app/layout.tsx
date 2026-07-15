@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 
 import { siteConfig } from "@/config/site";
+import { SupabaseSessionSync } from "@/features/auth/components/SupabaseSessionSync";
 
 import "./globals.css";
 
@@ -11,7 +12,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: siteConfig.name,
+  title: { default: siteConfig.name, template: `%s | ${siteConfig.name}` },
   description: siteConfig.description,
 };
 
@@ -22,7 +23,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <SupabaseSessionSync />
+        {children}
+      </body>
     </html>
   );
 }

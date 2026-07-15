@@ -31,3 +31,19 @@ Live Supabase connectivity has been verified (Phase 3) — resolved, no longer t
 ### Authenticated-role RLS behavior not yet exercised end-to-end
 
 Verification so far confirms: all 6 tables exist, and the `anon` role is fully denied (no grants, confirmed via REST). What hasn't been exercised yet is RLS filtering *for an authenticated user* (e.g., user A cannot see user B's rows) — there's no login flow (Phase 4) or real data (Phase 6+) yet to test that against. Revisit once those phases exist.
+
+---
+
+## Phase 4 — Authentication
+
+### Full registration happy-path not verified end-to-end
+
+Live testing confirmed validation, protected-route redirects, and error handling (including a correctly-mapped rate-limit message) all work — see `CHANGELOG.md`. What wasn't confirmed in this session: a real signup actually completing, redirecting to `/dashboard`, showing the logged-in email, and logging out successfully. Repeated test attempts hit Supabase's free-tier email-send rate limit before a full run-through completed. Nothing in the code path suggests a problem (registration reached Supabase's real signup call correctly both times), but this specific end-to-end path should be manually confirmed once.
+
+### Password-reset email link handling assumes the default (unconfigured) Supabase email template
+
+`UpdatePasswordForm` assumes Supabase's out-of-the-box "Reset Password" template, which redirects with the session in a URL hash fragment (handled client-side by the browser Supabase client). If the project's email templates are ever reconfigured to use the newer `token_hash`-based link format, this would need a server-side `/auth/confirm` route handler using `verifyOtp` instead. Not implemented, since customizing email templates isn't mentioned as in-scope anywhere in `/docs` and the dashboard configuration can't be inspected from here.
+
+### Signup email confirmation requirement is unknown
+
+Whether "Confirm email" is enabled for this Supabase project is a dashboard setting that couldn't be inspected. The code handles both cases correctly (checks `session === null` to decide whether to redirect or show "check your email"), so this isn't a gap in the implementation - just noting the assumption for whoever configures the project's Auth settings later.

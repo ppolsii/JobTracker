@@ -650,3 +650,15 @@ Every new file must naturally fit into the architecture defined in ARCHITECTURE.
 Every implementation must respect BUSINESS_RULES.md, DATABASE.md and FEATURES.md.
 
 If a coding decision is not covered by this document, choose the simplest maintainable solution.
+
+
+---
+
+# File Size
+
+Target:
+
+- Files under 300 lines.
+- Functions under 50 lines.
+
+When a file grows beyond this, extract responsibilities into dedicated modules.

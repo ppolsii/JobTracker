@@ -87,3 +87,57 @@ Complete PostgreSQL schema, per `DATABASE.md`, applied to the configured Supabas
 - All three migrations applied successfully to the live Supabase project.
 - Schema confirmed via the PostgREST REST API: all 6 tables are reachable at `/rest/v1/<table>` and correctly return `42501 permission denied` for the `anon` role (rather than `PGRST205 table not found`), confirming both that the tables exist and that anonymous access is fully locked out at the grant level, in addition to RLS.
 - TypeScript, ESLint, and production build all pass.
+
+---
+
+## Phase 4 — Authentication (2026-07-15)
+
+Register, login, logout, session handling, protected routes, and password reset, per `IMPLEMENTATION_ORDER.md`.
+
+### Added
+
+- `src/config/routes.ts` — centralised route path constants (`CODE_STYLE.md` forbids hardcoded URLs).
+- `src/shared/constants/error-codes.ts`, `src/types/action-result.ts` — the `ActionResult<T>` discriminated-union contract every Server Action returns, mirroring `API.md`'s documented response/error-code shape.
+- `src/features/auth/schemas/auth.schema.ts` — Zod schemas for login, register, request-password-reset, update-password.
+- `src/features/auth/repositories/auth.repository.ts` — the only module that calls `supabase.auth.*` from server code (ADR-008).
+- `src/features/auth/repositories/auth-browser.repository.ts` — its client-side counterpart, the only module that calls `supabase.auth.*` from browser code (added during the architecture review below).
+- `src/features/auth/services/auth.service.ts` — business logic: translates raw Supabase Auth errors into meaningful messages, handles Supabase's anti-enumeration behavior on both signup (empty `identities` array) and password reset (always returns success regardless of whether the email exists).
+- `src/features/auth/services/auth-browser.service.ts` — client-side counterpart (`hasRecoverySession`, `syncSessionFromUrl`).
+- `src/features/auth/actions/auth.actions.ts` — `registerAction`, `loginAction`, `logoutAction`, `requestPasswordResetAction`, `updatePasswordAction`.
+- `src/features/auth/components/{LoginForm,RegisterForm,ForgotPasswordForm,UpdatePasswordForm,LogoutButton,SupabaseSessionSync}.tsx` — the last one mounted once in the root layout; ensures a signup-confirmation link's session (encoded in the URL) is synced to cookies regardless of which page it lands on.
+- `src/app/(auth)/layout.tsx` + `login/`, `register/`, `forgot-password/` pages — centered-card layout that redirects to `/dashboard` if already logged in.
+- `src/app/update-password/` (its own layout, deliberately outside `(auth)`) — a recovery session would otherwise be treated as "already logged in" and redirected away before the user can set a new password.
+- `src/app/(dashboard)/layout.tsx` — auth guard redirecting to `/login` if unauthenticated. No Sidebar/Top Navigation yet (Phase 5).
+- `src/app/(dashboard)/dashboard/page.tsx` — placeholder page proving the protected-route/session/logout flow; the real dashboard is Phase 11.
+- shadcn primitives: `input`, `label`, `card`, `field`, `separator` (`button` already existed from Phase 1).
+
+### Changed
+
+- `src/config/env.ts` — added `appUrl` (from `NEXT_PUBLIC_APP_URL`, falls back to `http://localhost:3000`), used to build the password-reset redirect URL.
+- `src/app/layout.tsx` — added a title template (`%s | JobTracker Insights`) and mounted `SupabaseSessionSync`.
+
+### Technical decisions
+
+- **New dependencies**: `zod` (ADR-009), `react-hook-form` (ADR-010), `@hookform/resolvers` (the standard glue between them, not a discretionary extra).
+- **shadcn's `form.tsx` no longer exists in the current CLI/registry** (`base-nova` style) — it's been replaced by a framework-agnostic `field.tsx` (`Field`, `FieldLabel`, `FieldError`, etc.) with no built-in react-hook-form binding. Forms are wired manually via `register()` instead of the classic `<FormField control={...} render={...}>` wrapper.
+- **Full layered chain even for reads**: `ARCHITECTURE.md` explicitly forbids `UI → Repository`. Even the "is there a logged-in user" check used by both protected layouts goes through `AuthService.getCurrentUser() → AuthRepository.getUser()`, not a direct Supabase call in the component.
+- **Password reset flow**: Supabase's default (unconfigured) email templates redirect back to the app with the session in a URL hash fragment, visible only to the browser. `UpdatePasswordForm` and `SupabaseSessionSync` trigger that hash processing via `AuthBrowserService`/`AuthBrowserRepository` (a client-side counterpart to the server `AuthService`/`AuthRepository`, added during the architecture review below); the actual password update still goes through the normal Server Action → Service → Repository chain using the server client.
+- **Minimum password length**: 8 characters. `FEATURES.md` only says "minimum security requirements" without a number; Supabase's own default is 6.
+
+### Verification
+
+- TypeScript, ESLint, and production build all pass.
+- Live browser smoke test (Playwright against the dev server): `/dashboard` redirects to `/login` when logged out; `/login`, `/register`, `/forgot-password` render correctly with working client-side validation; `/update-password` correctly shows "invalid or expired" with no recovery session; registering with an obviously-fake domain (`@example.com`) is rejected by Supabase itself, correctly mapped to a friendly message; registering with a realistic domain reaches Supabase's actual signup call and correctly surfaces a friendly rate-limit message once Supabase's free-tier email quota was hit from repeated test attempts. No console errors or hydration warnings on any page. See `KNOWN_ISSUES.md` for what this did *not* cover.
+
+### Architecture review (post-implementation)
+
+A dedicated pass against `ARCHITECTURE.md` found two real violations of "no React component accesses Supabase directly" (ADR-008): `UpdatePasswordForm.tsx` called `supabase.auth.getSession()` directly, and `SupabaseSessionSync.tsx` imported the browser client factory directly. Fixed by adding a client-side counterpart to the server repository/service pair:
+
+- `src/features/auth/repositories/auth-browser.repository.ts` (`AuthBrowserRepository`) — the only module allowed to call `supabase.auth.*` from browser code.
+- `src/features/auth/services/auth-browser.service.ts` (`AuthBrowserService`) — `hasRecoverySession()`, `syncSessionFromUrl()`.
+
+Both components now call `AuthBrowserService` instead. Kept as separate files from the server-side `AuthRepository`/`AuthService` rather than merged, since a Client Component importing a module that transitively pulls in `next/headers` (via the server Supabase client) would break the build.
+
+`SupabaseSessionSync` was also moved from `src/shared/components/` to `src/features/auth/components/`: it depends on the auth feature's service, and `shared/` depending on a feature would invert `ARCHITECTURE.md`'s intended dependency direction (features depend on shared, not the reverse).
+
+All other criteria checked clean: no page contains business logic (layouts only make a redirect decision based on an already-computed auth state — routing plumbing, not a business rule); every database access goes through `Service → Repository` (verified by grep — `AuthRepository`/`AuthBrowserRepository` are each imported from exactly one place); Server Actions only validate, delegate to a Service, and redirect on the result — all error-translation and anti-enumeration logic lives in the Service layer; validation is centralized in one schema file (`auth.schema.ts`), imported identically by both the Server Actions and the client forms' `zodResolver`; no duplicated auth logic (`getCurrentUser`, `toFriendlyAuthError`, session-check logic are each defined exactly once).
