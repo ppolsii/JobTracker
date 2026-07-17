@@ -11,15 +11,8 @@ import {
   updatePasswordSchema,
 } from "@/features/auth/schemas/auth.schema";
 import { AuthService } from "@/features/auth/services/auth.service";
-import { ERROR_CODES } from "@/shared/constants/error-codes";
+import { validationError } from "@/shared/utils/action-result";
 import type { ActionResult } from "@/types/action-result";
-
-function validationError(message: string): ActionResult<never> {
-  return {
-    success: false,
-    error: { message, code: ERROR_CODES.VALIDATION_ERROR },
-  };
-}
 
 export async function registerAction(
   input: unknown

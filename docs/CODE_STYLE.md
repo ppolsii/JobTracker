@@ -662,3 +662,13 @@ Target:
 - Functions under 50 lines.
 
 When a file grows beyond this, extract responsibilities into dedicated modules.
+
+---
+
+# Component Rules
+
+A component should have a single responsibility.
+
+If a component exceeds roughly 200 lines, consider splitting it into smaller components.
+
+Complex components should be composed rather than expanded.

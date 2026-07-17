@@ -542,3 +542,21 @@ Update KNOWN_ISSUES.md if:
 - A future improvement has been identified.
 
 Never leave these documents outdated.
+
+---
+
+# Quality Gate
+
+Before closing any implementation phase, Claude MUST verify:
+
+- Production build succeeds.
+- TypeScript has zero errors.
+- ESLint has zero errors.
+- No architectural violations exist.
+- No feature imports exist inside shared/.
+- No direct Supabase access exists outside repositories.
+- No duplicated business logic exists.
+- CHANGELOG.md is updated.
+- KNOWN_ISSUES.md is updated if required.
+
+If any verification fails, the phase MUST NOT be considered complete.

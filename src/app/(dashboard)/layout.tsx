@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
 
 import { ROUTES } from "@/config/routes";
+import { LogoutButton } from "@/features/auth/components/LogoutButton";
+import { UserMenu } from "@/features/auth/components/UserMenu";
 import { AuthService } from "@/features/auth/services/auth.service";
+import { MainLayout } from "@/shared/components/layout/MainLayout";
 
-// Minimal auth guard only. The full shell (Sidebar, Top Navigation, Theme
-// Toggle) is built in Phase 5 - not anticipated here.
 export default async function DashboardLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -13,5 +14,12 @@ export default async function DashboardLayout({
     redirect(ROUTES.LOGIN);
   }
 
-  return <>{children}</>;
+  return (
+    <MainLayout
+      footer={<LogoutButton />}
+      userMenu={<UserMenu email={user.email ?? ""} />}
+    >
+      {children}
+    </MainLayout>
+  );
 }

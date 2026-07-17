@@ -658,3 +658,15 @@ Every implementation should fit naturally inside this architecture.
 If a feature does not clearly belong to an existing layer, stop and request clarification instead of creating a new architectural pattern.
 
 Architectural consistency is one of the highest priorities of this project.
+
+---
+
+# Business Rule Ownership
+
+Every business rule MUST exist in exactly one Service.
+
+Repositories never decide.
+
+Server Actions never decide.
+
+Components never decide.

@@ -38,12 +38,46 @@ Verification so far confirms: all 6 tables exist, and the `anon` role is fully d
 
 ### Full registration happy-path not verified end-to-end
 
-Live testing confirmed validation, protected-route redirects, and error handling (including a correctly-mapped rate-limit message) all work — see `CHANGELOG.md`. What wasn't confirmed in this session: a real signup actually completing, redirecting to `/dashboard`, showing the logged-in email, and logging out successfully. Repeated test attempts hit Supabase's free-tier email-send rate limit before a full run-through completed. Nothing in the code path suggests a problem (registration reached Supabase's real signup call correctly both times), but this specific end-to-end path should be manually confirmed once.
+Confirmed in Phase 5 testing: this Supabase project has "Confirm email" **enabled** (a real signup returns no session and `confirmation_sent_at` is set; login before confirming correctly fails with `email_not_confirmed`). Since there's no way to click a real confirmation email link in this environment, the full signup → confirm → `/dashboard` → logout path still hasn't been exercised end-to-end. The code path is correct as far as it can be verified (registration reaches Supabase's real signup call, `AuthService.register`'s `requiresEmailConfirmation` check behaves as designed) — this should be manually confirmed once, by actually clicking a confirmation email.
 
 ### Password-reset email link handling assumes the default (unconfigured) Supabase email template
 
 `UpdatePasswordForm` assumes Supabase's out-of-the-box "Reset Password" template, which redirects with the session in a URL hash fragment (handled client-side by the browser Supabase client). If the project's email templates are ever reconfigured to use the newer `token_hash`-based link format, this would need a server-side `/auth/confirm` route handler using `verifyOtp` instead. Not implemented, since customizing email templates isn't mentioned as in-scope anywhere in `/docs` and the dashboard configuration can't be inspected from here.
 
-### Signup email confirmation requirement is unknown
+---
 
-Whether "Confirm email" is enabled for this Supabase project is a dashboard setting that couldn't be inspected. The code handles both cases correctly (checks `session === null` to decide whether to redirect or show "check your email"), so this isn't a gap in the implementation - just noting the assumption for whoever configures the project's Auth settings later.
+## Phase 5 — Shared UI
+
+### Shell verified via a temporary route, not the real `/dashboard`
+
+Reaching the actual protected dashboard requires a confirmed account, which (see Phase 4 above) isn't possible in this environment. The Sidebar/TopNav/MobileSidebar/UserMenu/DataTable/EmptyState/ConfirmDialog were all verified by temporarily rendering `MainLayout` on an unprotected route, then deleting that route. The composition in `(dashboard)/layout.tsx` itself (passing `footer`/`userMenu` props) is simple enough that this is a low-risk gap, but the full authenticated path through the real `/dashboard` route hasn't been visually confirmed.
+
+### DataTable's "select all" only covers the current page
+
+Selecting "all" only selects rows visible on the current page, not every row across all pages. This is a deliberate v1 simplification (documented in the component), not a bug - revisit if a future feature genuinely needs cross-page bulk selection.
+
+---
+
+## Phase 6 — Company Management
+
+### Real Server Actions not verified against live data
+
+Same root cause as Phases 4–5: this Supabase project requires email confirmation and there's no confirmed test account reachable from this environment, so `createCompanyAction`/`updateCompanyAction`/`archiveCompanyAction` were never actually exercised against the live database - only the UI layer was verified (via a temporary route rendering `CompaniesTable` with mock data). Specifically unverified: the duplicate-name rejection actually round-tripping through Supabase, the new case-insensitive unique index behaving as intended, and the archive-blocking count query. The logic was verified via code review instead. Should be manually confirmed once a real account is available.
+
+### New migration not yet applied
+
+`supabase/migrations/20260716222143_case_insensitive_company_names.sql` has not been applied to the Supabase project (the user applies migrations manually via the SQL Editor, per the established Phase 3 workflow). Until it's run, company name uniqueness remains case-sensitive at the database level, even though `CompanyService`'s pre-check already treats names case-insensitively - a mismatch that only matters if the pre-check is ever bypassed (e.g., a race between two concurrent requests with different-case names).
+
+### Archive-blocking rule untested against real application data
+
+`CompanyService.archive`'s check against `applications.company_id` is implemented correctly per the schema (Phase 3), but there are no real applications yet (Phase 8 not built) to confirm the rejection path fires correctly end-to-end. Revisit once Phase 8 exists.
+
+---
+
+# Technical Debt
+
+Temporary workarounds are allowed only if they are:
+
+- Documented in KNOWN_ISSUES.md.
+- Explicitly justified.
+- Scheduled for later removal.

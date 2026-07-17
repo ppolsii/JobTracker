@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 import { AuthRepository } from "@/features/auth/repositories/auth.repository";
 import { ERROR_CODES } from "@/shared/constants/error-codes";
 import type { ActionResult } from "@/types/action-result";
@@ -131,7 +133,29 @@ export const AuthService = {
     return { success: true, data: undefined };
   },
 
-  async getCurrentUser() {
+  // Memoized per-request (React cache()): a protected layout and the page it
+  // wraps both need the current user, and this avoids issuing the same
+  // Supabase call twice for one request (ARCHITECTURE.md "avoid duplicate
+  // queries").
+  getCurrentUser: cache(async () => {
     return AuthRepository.getUser();
+  }),
+
+  // Shared auth guard for every feature's Server Actions (CODE_STYLE.md:
+  // Server Actions must "Authenticate user"). Lives here rather than
+  // shared/, since it depends on this Service - shared/ must stay
+  // feature-agnostic.
+  async requireUserId(): Promise<ActionResult<string>> {
+    const user = await AuthService.getCurrentUser();
+    if (!user) {
+      return {
+        success: false,
+        error: {
+          message: "You must be logged in.",
+          code: ERROR_CODES.UNAUTHENTICATED,
+        },
+      };
+    }
+    return { success: true, data: user.id };
   },
 };
