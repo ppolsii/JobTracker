@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { DEFAULT_CURRENCY } from "@/features/applications/constants/application.constants";
 import type { ApplicationSortBy } from "@/features/applications/constants/application.constants";
 import type {
   AnalyticsApplicationRow,
@@ -48,13 +49,27 @@ export interface ApplicationListParams {
 // Only this module may query the applications table (ADR-008). Every query
 // filters by user_id in addition to RLS, as defense in depth.
 export const ApplicationRepository = {
+  // Calls create_application_with_genesis (Phase 20) instead of a plain
+  // insert, so the application row and its genesis status-history row are
+  // written atomically - see that migration for why. RLS still governs both
+  // writes exactly as it did for the two separate calls this replaced.
   async create(payload: ApplicationInsert) {
     const supabase = await createClient();
-    return supabase
-      .from("applications")
-      .insert(payload)
-      .select(APPLICATION_COLUMNS)
-      .single();
+    return supabase.rpc("create_application_with_genesis", {
+      p_user_id: payload.user_id,
+      p_company_id: payload.company_id,
+      p_cv_version_id: payload.cv_version_id,
+      p_position: payload.position,
+      p_application_date: payload.application_date ?? null,
+      p_job_url: payload.job_url ?? null,
+      p_location: payload.location ?? null,
+      p_work_mode: payload.work_mode ?? null,
+      p_employment_type: payload.employment_type ?? null,
+      p_source: payload.source ?? null,
+      p_salary_min: payload.salary_min ?? null,
+      p_salary_max: payload.salary_max ?? null,
+      p_currency: payload.currency ?? DEFAULT_CURRENCY,
+    });
   },
 
   // Backs both the "General Information" section of the Application Detail
@@ -83,6 +98,29 @@ export const ApplicationRepository = {
       .is("deleted_at", null)
       .select(APPLICATION_COLUMNS)
       .maybeSingle();
+  },
+
+  // Calls transition_application_status (Phase 20) instead of a separate
+  // date update followed by a separate history insert, so both writes
+  // happen atomically - see that migration for why. Called only from
+  // ApplicationStatusService.changeStatus, after that Service has already
+  // validated the transition is allowed and resolved whether a date is
+  // required; this method makes no decision of its own.
+  async transitionStatus(
+    userId: string,
+    applicationId: string,
+    previousStatus: ApplicationStatus,
+    newStatus: ApplicationStatus,
+    applicationDate?: string
+  ) {
+    const supabase = await createClient();
+    return supabase.rpc("transition_application_status", {
+      p_user_id: userId,
+      p_application_id: applicationId,
+      p_previous_status: previousStatus,
+      p_new_status: newStatus,
+      p_application_date: applicationDate ?? null,
+    });
   },
 
   async archive(userId: string, id: string) {

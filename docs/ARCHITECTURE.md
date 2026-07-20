@@ -133,6 +133,8 @@ Repositories contain persistence logic only.
 
 Repositories never implement business rules.
 
+A Repository method may call a Postgres RPC function instead of issuing a query directly, but only to guarantee that two or more related writes commit together (atomicity) - never to hold a business decision. Which writes happen and under what conditions is still decided entirely by the Service before the Repository is called. The function itself must remain a small, generic wrapper around the writes it makes atomic (see `DATABASE.md` "Functions").
+
 ---
 
 ## Database

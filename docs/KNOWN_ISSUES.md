@@ -112,7 +112,7 @@ Same root cause as Phases 4–7: no confirmed test account is reachable from thi
 
 ### Genesis status-history insert is not atomic with application creation
 
-`ApplicationService.create` performs two sequential inserts (the application, then its genesis `application_status_history` row) with no surrounding transaction or Postgres function. If the second insert fails (rare - only on a transient DB error), the application row still exists and is fully usable, but its audit trail is momentarily incomplete until manually reconciled. No rollback is attempted, since a compensating delete could itself fail and compound the problem. Revisit if/when a Postgres RPC function is introduced for atomic multi-table writes (not currently justified for this single edge case alone).
+**Resolved (Version 2, Phase 20).** `ApplicationRepository.create` now calls the `create_application_with_genesis` Postgres function, which inserts the application and its genesis `application_status_history` row in one transaction - see `DATABASE.md` "Functions". No longer tracked.
 
 ### Editing an application whose Company/CV Version was later archived shows an empty picker
 
@@ -128,7 +128,7 @@ Same root cause as Phases 4-8: no confirmed test account is reachable from this 
 
 ### Date-then-transition write is not atomic
 
-`ApplicationStatusService.changeStatus` performs up to two sequential writes when leaving Wishlist without an existing date: first `ApplicationRepository.update` (sets `application_date`), then `ApplicationStatusHistoryRepository.createTransition` (inserts the history row, which triggers the `current_status` sync). No surrounding transaction or Postgres function exists. If the first write succeeds but the second fails, the application ends up with a saved `application_date` but an unchanged `current_status` - a partial, though non-corrupting, side effect (a retry succeeds cleanly, since the date requirement is now already satisfied). Same category of limitation as Phase 8's non-atomic genesis insert; revisit together if a Postgres RPC function is ever introduced for atomic multi-table writes.
+**Resolved (Version 2, Phase 20).** `ApplicationStatusService.changeStatus` now calls `ApplicationRepository.transitionStatus`, which uses the `transition_application_status` Postgres function to update `application_date` (when needed) and insert the history row in one transaction - see `DATABASE.md` "Functions". No longer tracked.
 
 ### `offer_salary`, `rejection_reason`, `response_date` are never populated
 
@@ -184,7 +184,7 @@ Same root cause as every prior phase: no confirmed test account is reachable fro
 
 ### Two bulk reads aggregated in application code, not SQL `GROUP BY`
 
-`AnalyticsService` fetches all of a user's non-archived applications (lean columns) and all their status history in two queries, then groups/aggregates in memory. This is a deliberate, documented exception to "prefer SQL aggregation" (`ANALYTICS_ENGINE.md` "Performance Requirements") - PostgREST's REST interface has no `GROUP BY` primitive, and `DATABASE.md` explicitly defers SQL views (e.g. `cv_statistics`, `company_statistics`, `monthly_statistics`) to "future versions." At a realistic MVP data volume (an individual user's own application history) this is fast and well within the documented <500ms target, but it does mean Analytics' performance scales with one user's total application count rather than being O(1) - revisit if a future phase introduces the views `DATABASE.md` anticipates.
+**Partially resolved (Version 2, Phase 21).** Company/CV/Monthly Analytics' counts and the Overview's counts are now computed by `GROUP BY` in the four `DATABASE.md` "Views" (`dashboard_metrics`, `cv_statistics`, `company_statistics`, `monthly_statistics`), not by iterating applications in memory. Still true, and not resolved by this phase: `AnalyticsService` still fetches all of a user's non-archived applications and status history in two bulk queries, needed for Source Analytics (no `source_statistics` view was reserved), Funnel Analytics, Insights, and every grouping's Average Response Time (needs per-application status-history timestamps a per-status count view cannot provide). This remaining scope is intentionally out of Phase 21 - see `CHANGELOG.md` for the reasoning. At a realistic MVP data volume this remains fast and well within the documented <500ms target.
 
 ---
 

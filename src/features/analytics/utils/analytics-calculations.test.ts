@@ -1,14 +1,21 @@
 import { describe, expect, it } from "vitest";
 
+import type {
+  GroupStatisticsRow,
+  StatusCountColumns,
+} from "@/features/analytics/repositories/analytics.repository";
 import {
   buildHistoryFactsByApplication,
   computeFunnelAnalytics,
   computeGroupAnalytics,
+  computeGroupAnalyticsFromStatistics,
   computeInsights,
   computeOverview,
+  deriveOverviewCounts,
 } from "@/features/analytics/utils/analytics-calculations";
 import type {
   AnalyticsApplicationRow,
+  ApplicationStatus,
   ApplicationStatusHistoryEntry,
 } from "@/features/applications/types/application.types";
 
@@ -198,6 +205,136 @@ describe("computeGroupAnalytics", () => {
     );
 
     expect(rows[0].averageResponseTimeDays).toBeNull();
+  });
+});
+
+// Builds the StatusCountColumns a Phase 21 SQL view would return for a
+// given set of apps - i.e. simulates the view's GROUP BY in plain JS, so
+// the tests below can assert computeGroupAnalyticsFromStatistics produces
+// results identical to computeGroupAnalytics for the same underlying data.
+function statusCountsFor(apps: AnalyticsApplicationRow[]): StatusCountColumns {
+  function count(status: ApplicationStatus): number {
+    return apps.filter((a) => a.current_status === status).length;
+  }
+  return {
+    wishlist_count: count("Wishlist"),
+    applied_count: count("Applied"),
+    recruiter_contact_count: count("Recruiter Contact"),
+    hr_interview_count: count("HR Interview"),
+    technical_interview_count: count("Technical Interview"),
+    final_interview_count: count("Final Interview"),
+    offer_count: count("Offer"),
+    accepted_count: count("Accepted"),
+    rejected_count: count("Rejected"),
+    total_count: apps.length,
+  };
+}
+
+describe("computeGroupAnalyticsFromStatistics", () => {
+  it("produces results identical to computeGroupAnalytics for the same underlying applications (Phase 21 refactor parity)", () => {
+    const apps = [
+      app({ id: "a1", company_id: "c1", current_status: "Applied" }),
+      app({ id: "a2", company_id: "c1", current_status: "HR Interview" }),
+      app({ id: "a3", company_id: "c1", current_status: "Offer" }),
+      app({ id: "a4", company_id: "c2", current_status: "Rejected" }),
+      app({ id: "a5", company_id: "c2", current_status: "Accepted" }),
+    ];
+    const historyFacts = buildHistoryFactsByApplication([
+      historyEntry({
+        application_id: "a2",
+        previous_status: "Applied",
+        new_status: "HR Interview",
+        changed_at: "2026-01-04T00:00:00.000Z",
+      }),
+      historyEntry({
+        application_id: "a3",
+        previous_status: "Applied",
+        new_status: "Recruiter Contact",
+        changed_at: "2026-01-03T00:00:00.000Z",
+      }),
+    ]);
+
+    const before = computeGroupAnalytics(
+      apps,
+      historyFacts,
+      (a) => a.company_id,
+      (a) => a.companies.name
+    );
+
+    const statisticsRows: GroupStatisticsRow[] = [
+      { user_id: "user-1", id: "c1", name: "Acme", ...statusCountsFor(
+        apps.filter((a) => a.company_id === "c1")
+      ) },
+      { user_id: "user-1", id: "c2", name: "Acme", ...statusCountsFor(
+        apps.filter((a) => a.company_id === "c2")
+      ) },
+    ];
+
+    const after = computeGroupAnalyticsFromStatistics(
+      statisticsRows,
+      apps,
+      historyFacts,
+      (a) => a.company_id
+    );
+
+    const sortById = (rows: typeof before) =>
+      [...rows].sort((a, b) => a.id.localeCompare(b.id));
+
+    expect(sortById(after)).toEqual(sortById(before));
+  });
+
+  it("returns null averageResponseTimeDays when no application in the group has responded", () => {
+    const apps = [app({ id: "a1", company_id: "c1" })];
+    const statisticsRows: GroupStatisticsRow[] = [
+      {
+        user_id: "user-1",
+        id: "c1",
+        name: "Acme",
+        ...statusCountsFor(apps),
+      },
+    ];
+
+    const rows = computeGroupAnalyticsFromStatistics(
+      statisticsRows,
+      apps,
+      new Map(),
+      (a) => a.company_id
+    );
+
+    expect(rows[0].averageResponseTimeDays).toBeNull();
+  });
+});
+
+describe("deriveOverviewCounts", () => {
+  it("matches computeOverview's expected input shape when a view row exists", () => {
+    const counts = deriveOverviewCounts({
+      wishlist_count: 0,
+      applied_count: 1,
+      recruiter_contact_count: 0,
+      hr_interview_count: 1,
+      technical_interview_count: 0,
+      final_interview_count: 0,
+      offer_count: 1,
+      accepted_count: 0,
+      rejected_count: 2,
+      total_count: 5,
+    });
+
+    expect(counts).toEqual({
+      total: 5,
+      interviews: 2, // hr_interview_count + offer_count
+      offers: 1,
+      responded: 4, // total - (wishlist + applied)
+    });
+  });
+
+  it("defaults every count to zero when the view returns no row (no applications yet)", () => {
+    expect(deriveOverviewCounts(null)).toEqual({
+      total: 0,
+      interviews: 0,
+      offers: 0,
+      responded: 0,
+    });
   });
 });
 

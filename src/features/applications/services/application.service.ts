@@ -2,7 +2,6 @@ import {
   ApplicationRepository,
   type ApplicationListParams,
 } from "@/features/applications/repositories/application.repository";
-import { ApplicationStatusHistoryRepository } from "@/features/applications/repositories/application-status-history.repository";
 import type { CreateApplicationInput } from "@/features/applications/schemas/application.schema";
 import type {
   AnalyticsApplicationRow,
@@ -129,20 +128,10 @@ export const ApplicationService = {
     }
 
     // BUSINESS_RULES.md "Status History": "Every status change must generate
-    // a history record" - the genesis row for this new application. Not
-    // atomic with the insert above (no multi-statement transaction/RPC
-    // mechanism exists yet); best-effort with logging on failure. See
-    // KNOWN_ISSUES.md.
-    const genesis = await ApplicationStatusHistoryRepository.createGenesis(
-      userId,
-      data.id
-    );
-    if (genesis.error) {
-      console.error(
-        `Failed to create genesis status history for application ${data.id} (user ${userId}): ${genesis.error.message}`
-      );
-    }
-
+    // a history record" - the genesis row for this new application.
+    // ApplicationRepository.create writes it atomically with the
+    // application itself via the create_application_with_genesis RPC
+    // (Phase 20), so there is nothing further to do here.
     return { success: true, data };
   },
 

@@ -3,16 +3,22 @@
 import { usePathname } from "next/navigation";
 
 import { NAV_ITEMS } from "@/config/navigation";
-import { ExportMenu } from "@/features/export/components/ExportMenu";
-import { GlobalSearch } from "@/features/search/components/GlobalSearch";
 import { MobileSidebar } from "@/shared/components/layout/MobileSidebar";
 import { ThemeToggle } from "@/shared/components/ThemeToggle";
 
+// `search` and `exportMenu` are slots the caller fills in, the same
+// prop-injection pattern already used for `footer`/`userMenu` - this keeps
+// shared/ feature-agnostic (ARCHITECTURE.md) instead of importing
+// @/features/search or @/features/export directly.
 export function TopNav({
   footer,
+  search,
+  exportMenu,
   userMenu,
 }: {
   footer?: React.ReactNode;
+  search: React.ReactNode;
+  exportMenu: React.ReactNode;
   userMenu: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -24,11 +30,9 @@ export function TopNav({
       <h1 className="text-sm font-semibold">
         {currentPage?.label ?? "JobTracker Insights"}
       </h1>
-      <div className="ml-auto hidden max-w-xs flex-1 sm:block">
-        <GlobalSearch />
-      </div>
+      <div className="ml-auto hidden max-w-xs flex-1 sm:block">{search}</div>
       <div className="ml-auto flex items-center gap-2 sm:ml-0">
-        <ExportMenu />
+        {exportMenu}
         <ThemeToggle />
         {userMenu}
       </div>

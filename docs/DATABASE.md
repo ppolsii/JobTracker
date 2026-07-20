@@ -922,21 +922,43 @@ is automatically updated.
 
 ---
 
+# Functions
+
+Version 2, Phase 20 introduced two Postgres functions (`supabase/migrations/20260720090000_atomic_application_writes.sql`), called via RPC instead of a plain insert/update, purely to guarantee two related writes commit together or not at all. Neither function validates anything or decides any business rule - both run SECURITY INVOKER (the default), so RLS continues to enforce ownership exactly as it does for every other insert/update in this schema.
+
+create_application_with_genesis
+
+Inserts an `applications` row and its genesis `application_status_history` row (previous_status null, new_status Wishlist) in one transaction. Replaces what was previously two separate statements from `ApplicationService.create`.
+
+transition_application_status
+
+Optionally updates `applications.application_date`, then inserts a transition row into `application_status_history`, in one transaction. previous_status is supplied by the caller (`ApplicationStatusService`), not derived here. Replaces what was previously two separate statements from `ApplicationStatusService.changeStatus`.
+
+---
+
 # Views
 
-Future versions may include SQL Views.
-
-Examples
+Version 2, Phase 21 implemented the four views this section previously reserved (`supabase/migrations/20260720100000_analytics_statistics_views.sql`). All four are read-only, `security_invoker` (so RLS on `applications`/`companies`/`cv_versions` applies exactly as it does for any other query against those tables), and perform pure per-status counting via `GROUP BY` - nothing else. Every view enumerates all 9 `application_status` values exhaustively as separate count columns; which statuses mean "interview", "offer" or "response" remains a decision made entirely in application code (`application.constants.ts`), never in these views.
 
 dashboard_metrics
 
+One row per user: a count per status plus `total_count`, across all of that user's non-archived applications. Backs Analytics' Overview (Response/Interview/Offer Rate).
+
 cv_statistics
+
+One row per CV version: the same per-status counts, grouped by `cv_version_id`. Backs CV Analytics.
 
 company_statistics
 
+One row per company: the same per-status counts, grouped by `company_id`. Backs Company Analytics.
+
 monthly_statistics
 
-These views should remain read-only.
+One row per `YYYY-MM` (from `application_date`): the same per-status counts, grouped by month. Applications with no `application_date` (Wishlist stage) are excluded. Backs Monthly Analytics.
+
+Not covered by a view
+
+Source Analytics (no `source_statistics` name was reserved), Funnel Analytics, Insights, and every grouping's Average Response Time remain computed in `AnalyticsService`/`analytics-calculations.ts` from the existing bulk applications/status-history reads - see `CHANGELOG.md` Phase 21 for why.
 
 ---
 

@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ApplicationStatusHistoryRepository } from "@/features/applications/repositories/application-status-history.repository";
 import { ApplicationRepository } from "@/features/applications/repositories/application.repository";
 import { ApplicationStatusService } from "@/features/applications/services/application-status.service";
 import { ERROR_CODES } from "@/shared/constants/error-codes";
@@ -8,21 +7,25 @@ import { ERROR_CODES } from "@/shared/constants/error-codes";
 vi.mock("@/features/applications/repositories/application.repository", () => ({
   ApplicationRepository: {
     findById: vi.fn(),
-    update: vi.fn(),
+    transitionStatus: vi.fn(),
   },
 }));
 
+// changeStatus (under test below) no longer calls this repository directly
+// (see ApplicationRepository.transitionStatus), but application-status.service.ts
+// still imports it for listHistory/listHistoryForApplications - it must stay
+// mocked so that real module (and its real Supabase client) is never loaded.
 vi.mock(
   "@/features/applications/repositories/application-status-history.repository",
   () => ({
     ApplicationStatusHistoryRepository: {
-      createTransition: vi.fn(),
+      listByApplication: vi.fn(),
+      listByApplicationIds: vi.fn(),
     },
   })
 );
 
 const mockedApplications = vi.mocked(ApplicationRepository);
-const mockedHistory = vi.mocked(ApplicationStatusHistoryRepository);
 
 function applicationRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -68,7 +71,7 @@ describe("ApplicationStatusService.changeStatus", () => {
     if (!result.success) {
       expect(result.error.code).toBe(ERROR_CODES.VALIDATION_ERROR);
     }
-    expect(mockedHistory.createTransition).not.toHaveBeenCalled();
+    expect(mockedApplications.transitionStatus).not.toHaveBeenCalled();
   });
 
   it("rejects any transition out of a terminal state (Accepted)", async () => {
@@ -84,7 +87,7 @@ describe("ApplicationStatusService.changeStatus", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(mockedHistory.createTransition).not.toHaveBeenCalled();
+    expect(mockedApplications.transitionStatus).not.toHaveBeenCalled();
   });
 
   it("blocks leaving Wishlist without an application date, and never records the transition", async () => {
@@ -106,8 +109,7 @@ describe("ApplicationStatusService.changeStatus", () => {
     if (!result.success) {
       expect(result.error.code).toBe(ERROR_CODES.VALIDATION_ERROR);
     }
-    expect(mockedApplications.update).not.toHaveBeenCalled();
-    expect(mockedHistory.createTransition).not.toHaveBeenCalled();
+    expect(mockedApplications.transitionStatus).not.toHaveBeenCalled();
   });
 
   it("accepts leaving Wishlist when an application date is supplied with the transition", async () => {
@@ -126,8 +128,9 @@ describe("ApplicationStatusService.changeStatus", () => {
         }),
         error: null,
       } as never);
-    mockedApplications.update.mockResolvedValue({ error: null } as never);
-    mockedHistory.createTransition.mockResolvedValue({ error: null } as never);
+    mockedApplications.transitionStatus.mockResolvedValue({
+      error: null,
+    } as never);
 
     const result = await ApplicationStatusService.changeStatus(
       "user-1",
@@ -137,18 +140,16 @@ describe("ApplicationStatusService.changeStatus", () => {
     );
 
     expect(result.success).toBe(true);
-    expect(mockedApplications.update).toHaveBeenCalledWith("user-1", "app-1", {
-      application_date: "2026-02-01",
-    });
-    expect(mockedHistory.createTransition).toHaveBeenCalledWith(
+    expect(mockedApplications.transitionStatus).toHaveBeenCalledWith(
       "user-1",
       "app-1",
       "Wishlist",
-      "Applied"
+      "Applied",
+      "2026-02-01"
     );
   });
 
-  it("does not touch application_date when leaving Wishlist with a date already on record", async () => {
+  it("does not pass an application date when leaving Wishlist with a date already on record", async () => {
     mockedApplications.findById
       .mockResolvedValueOnce({
         data: applicationRow({
@@ -161,7 +162,9 @@ describe("ApplicationStatusService.changeStatus", () => {
         data: applicationRow({ current_status: "Applied" }),
         error: null,
       } as never);
-    mockedHistory.createTransition.mockResolvedValue({ error: null } as never);
+    mockedApplications.transitionStatus.mockResolvedValue({
+      error: null,
+    } as never);
 
     const result = await ApplicationStatusService.changeStatus(
       "user-1",
@@ -170,7 +173,13 @@ describe("ApplicationStatusService.changeStatus", () => {
     );
 
     expect(result.success).toBe(true);
-    expect(mockedApplications.update).not.toHaveBeenCalled();
+    expect(mockedApplications.transitionStatus).toHaveBeenCalledWith(
+      "user-1",
+      "app-1",
+      "Wishlist",
+      "Applied",
+      undefined
+    );
   });
 
   it("allows a normal downstream transition that isn't leaving Wishlist", async () => {
@@ -183,7 +192,9 @@ describe("ApplicationStatusService.changeStatus", () => {
         data: applicationRow({ current_status: "Recruiter Contact" }),
         error: null,
       } as never);
-    mockedHistory.createTransition.mockResolvedValue({ error: null } as never);
+    mockedApplications.transitionStatus.mockResolvedValue({
+      error: null,
+    } as never);
 
     const result = await ApplicationStatusService.changeStatus(
       "user-1",
@@ -192,11 +203,12 @@ describe("ApplicationStatusService.changeStatus", () => {
     );
 
     expect(result.success).toBe(true);
-    expect(mockedHistory.createTransition).toHaveBeenCalledWith(
+    expect(mockedApplications.transitionStatus).toHaveBeenCalledWith(
       "user-1",
       "app-1",
       "Applied",
-      "Recruiter Contact"
+      "Recruiter Contact",
+      undefined
     );
   });
 
@@ -210,7 +222,9 @@ describe("ApplicationStatusService.changeStatus", () => {
         data: applicationRow({ current_status: "Rejected" }),
         error: null,
       } as never);
-    mockedHistory.createTransition.mockResolvedValue({ error: null } as never);
+    mockedApplications.transitionStatus.mockResolvedValue({
+      error: null,
+    } as never);
 
     const result = await ApplicationStatusService.changeStatus(
       "user-1",

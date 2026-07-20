@@ -734,3 +734,84 @@ Not implemented - no runnable environment exists. Same root cause as every prior
 ### Not addressed (remaining, environment-blocked)
 
 Every other open item in `KNOWN_ISSUES.md` reduces to the same root cause already documented per-phase since Phase 4: no confirmed, reachable Supabase test account exists in this environment. This includes live-data verification for every phase's Server Actions/RLS policies, whether the two pending case-insensitive-name migrations have been applied, and whether the composite-FK embedded-resource query behaves as expected against a real project. None of these are fixable by further code changes; they require a real account and are the first things to verify once one is available.
+
+---
+
+# Version 2
+
+Continues the phase numbering established by `IMPLEMENTATION_ORDER.md`, per `IMPLEMENTATION_ORDER_V2.md`.
+
+---
+
+## Phase 19 — V2 Readiness (Pre-Flight Cleanup) (2026-07-20)
+
+Closed pre-existing MVP technical debt and confirmed a stable baseline before starting Version 2 feature work, per `IMPLEMENTATION_ORDER_V2.md`. No product features, business rules, or database changes.
+
+### Fixed
+
+- **`TopNav` no longer imports `@/features/export` or `@/features/search` directly.** This was a real `ARCHITECTURE.md` violation (`shared/` must remain feature-agnostic) discovered during a prior read-only audit but never previously corrected. `TopNav` now accepts `search` and `exportMenu` as `ReactNode` props, the same prop-injection pattern already used for `footer`/`userMenu`. `MainLayout` threads both new props through unchanged otherwise. `(dashboard)/layout.tsx` - the one place already legitimately depending on both `auth` and now `export`/`search` - supplies `<GlobalSearch />` and `<ExportMenu />` directly.
+
+### Verified
+
+- `npm run typecheck`, `npm run lint`, `npm run build`, and `npm run test` (93 tests, 11 files) all pass. The `vitest`-missing-from-`node_modules` build failure noted in a prior audit is no longer reproducing (a `npm install` outside this session appears to have resolved it - no code change was required).
+- Connecting the GitHub repository to Vercel (`KNOWN_ISSUES.md`, Phase 18) remains a manual, dashboard-side step outside this environment's capability - not performed here, unchanged from its prior status.
+
+### Notes
+
+- `KNOWN_ISSUES.md` has no corresponding entry to remove for the `TopNav` fix: the violation was reported in a prior conversation's read-only audit response but was never written into the document (that audit was explicitly instructed not to modify any file). No `KNOWN_ISSUES.md` change was needed as a result.
+
+---
+
+## Phase 20 — Atomic Writes Foundation (Postgres RPC) (2026-07-20)
+
+Introduced the project's first Postgres RPC function pattern, applied narrowly to the two non-atomic write sequences documented since the MVP, per `IMPLEMENTATION_ORDER_V2.md`. No new feature, business rule, or table/column change.
+
+### Added
+
+- `supabase/migrations/20260720090000_atomic_application_writes.sql` - two functions, `create_application_with_genesis` and `transition_application_status`. Each wraps writes that were previously two sequential statements into one transaction. Neither validates anything or contains a business rule; both run `SECURITY INVOKER` (the default), so RLS continues to enforce ownership exactly as it did for the two separate calls each replaces.
+
+### Changed
+
+- `ApplicationRepository.create` now calls `create_application_with_genesis` via `supabase.rpc(...)` instead of a plain `.insert()`. Its return shape (the full `applications` row) and every existing error code it can surface (`23514` check violation, `23503` foreign key violation) are unchanged, so `ApplicationService.create`'s error-mapping needed no changes.
+- `ApplicationRepository` gained `transitionStatus(userId, applicationId, previousStatus, newStatus, applicationDate?)`, calling `transition_application_status` via RPC.
+- `ApplicationService.create` no longer performs a separate, best-effort genesis insert after creating the application - that insert is now part of the same atomic RPC call, so the prior `console.error`-on-failure fallback path no longer exists (there is nothing left for it to guard against).
+- `ApplicationStatusService.changeStatus` now makes one call to `ApplicationRepository.transitionStatus` instead of two sequential repository calls (`ApplicationRepository.update` for the date, `ApplicationStatusHistoryRepository.createTransition` for the history row). The two previously-distinct failure messages ("while setting the application date" / "while updating the status") are now one ("while updating the status"), since there is only one write operation to fail.
+- `ApplicationStatusHistoryRepository` lost `createGenesis` and `createTransition` (both now unused - their callers were replaced above) and is read-only as a result (`listByApplication`, `listByApplicationIds` only).
+- `src/types/supabase.ts` - added a `Functions` entry for both RPCs (previously `Record<never, never>`), so both are fully typed at the call site with no `any`.
+
+### Verification
+
+- `npm run typecheck`, `npm run lint`, `npm run build`, and `npm run test` (93 tests, 11 files) all pass. `application-status.service.test.ts` was updated to mock `ApplicationRepository.transitionStatus` in place of the two calls it replaces.
+- Not verified against a live database in this environment - same persistent limitation as every phase since Phase 4 (no confirmed, reachable Supabase test account). The migration SQL was reviewed by hand for RLS/constraint interaction (see its own header comment) but not executed.
+
+---
+
+## Phase 21 — Analytics SQL Views (2026-07-20)
+
+Implemented the four SQL views `DATABASE.md` reserved (`dashboard_metrics`, `cv_statistics`, `company_statistics`, `monthly_statistics`), per `IMPLEMENTATION_ORDER_V2.md`. Company/CV/Monthly Analytics' counts and the Overview's counts are now computed by `GROUP BY` in the database instead of being filtered/counted in memory. No Analytics formula, business rule, or output value changed - see "Scope and reasoning" below for what deliberately stayed unchanged and why.
+
+### Added
+
+- `supabase/migrations/20260720100000_analytics_statistics_views.sql` - four views, each performing pure per-status counting via `GROUP BY` (every `application_status` enumerated as its own count column). None categorises what a status "means" (interview, offer, response) - that decision stays entirely in `application.constants.ts`/`analytics-calculations.ts`, unchanged. All four are `security_invoker`, with an explicit `user_id = (select auth.uid())` filter as defense in depth on top of RLS - the same pattern already used throughout this schema.
+- `src/features/analytics/repositories/analytics.repository.ts` (new) - the feature's first Repository, querying the four views only.
+- `src/features/analytics/utils/analytics-calculations.ts` gained `computeGroupAnalyticsFromStatistics` (counts/rates from a view row, Average Response Time still computed from the existing bulk applications/history data grouped by the same key) and `deriveOverviewCounts` (adapts a `dashboard_metrics` row into the same `{total, interviews, offers, responded}` shape `computeOverview` already took). Both are additive - `computeGroupAnalytics` and `computeOverview` themselves are unchanged, still used for Source Analytics and still the one place rate/gating logic lives, respectively.
+- `analytics-calculations.test.ts` - a parity test asserting `computeGroupAnalyticsFromStatistics` produces results identical to `computeGroupAnalytics` for the same underlying applications, plus coverage for `deriveOverviewCounts`.
+
+### Changed
+
+- `AnalyticsService.getSummary` now fetches the four views (via `AnalyticsRepository`) alongside the existing bulk applications read, in the same `Promise.all`. Company/CV/Monthly Analytics and the Overview are built from the views; Source Analytics, Funnel Analytics, Insights, and Average Response Time are computed exactly as before, from the same bulk applications/status-history reads already fetched.
+- `AnalyticsService` no longer calls `ApplicationStatsService.getDashboardCounts` - the Overview's counts now come from `dashboard_metrics`. `ApplicationStatsService`/`DashboardService` themselves are untouched; the Dashboard page's own KPI counts still use the original `countByStatuses` queries, unaffected by this phase.
+- `src/types/supabase.ts` - added `Views` entries for all four views (previously `Record<never, never>`).
+
+### Scope and reasoning
+
+- **Source Analytics was not moved to a view.** `DATABASE.md` reserves no `source_statistics` name, and `IMPLEMENTATION_ORDER_V2.md` Phase 21 lists only the four views above - adding a fifth would be scope beyond what this phase defines. `computeGroupAnalytics` (unchanged) still computes it from the bulk applications read.
+- **Average Response Time was not moved into any view**, even for the three groupings a view does cover. It needs a per-application status-history timestamp (the transition immediately after Applied), not a status count - moving it into SQL would mean duplicating date arithmetic in four places with no way to verify it against a live database in this environment (no confirmed Supabase test account has been reachable at any point in this project - see every prior phase's "Real data not verified" entries). Keeping it in `analytics-calculations.ts`, already covered by existing unit tests, was the lower-risk choice given this phase's explicit requirement that output remain identical.
+- **Funnel Analytics and Insights were not touched.** Neither has a corresponding view; both are entirely derived from data (full status-history facts, or the other computed arrays) that a per-status count view cannot supply.
+- Because Source Analytics still requires the full bulk applications read, this phase does not eliminate that read - it removes the JS-side counting/filtering work for three of the four groupings, running concurrently (`Promise.all`) with the read that Source Analytics/Funnel/Insights still need.
+
+### Verification
+
+- Added a parity test (see "Added" above) directly comparing `computeGroupAnalyticsFromStatistics`'s output against `computeGroupAnalytics`'s output for identical underlying application data - both produce the same `applications`/`responses`/`interviews`/`offers`/`accepted`/`rejected`/rates/`averageResponseTimeDays` values.
+- `npm run typecheck`, `npm run lint`, `npm run build`, and `npm run test` (97 tests, 11 files) all pass.
+- Not verified against a live database in this environment - same persistent limitation as every phase since Phase 4. The view SQL was reviewed by hand for RLS (`security_invoker` + explicit `user_id` filter) and grouping-key correctness (in particular `monthly_statistics`'s `to_char(application_date, 'YYYY-MM')` matching `application_date.slice(0, 7)` exactly) but not executed.

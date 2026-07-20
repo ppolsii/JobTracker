@@ -5,6 +5,10 @@ import {
   MIN_SAMPLE_INTERVIEW_OFFER_RATE,
 } from "@/features/analytics/constants/analytics.constants";
 import type {
+  GroupStatisticsRow,
+  StatusCountColumns,
+} from "@/features/analytics/repositories/analytics.repository";
+import type {
   AnalyticsOverview,
   FunnelStageRow,
   GroupAnalyticsRow,
@@ -164,6 +168,108 @@ export function computeGroupAnalytics(
   }
 
   return rows;
+}
+
+// IMPLEMENTATION_ORDER_V2.md Phase 21: maps each application_status to the
+// matching column on a Phase 21 statistics view row. Purely a column-name
+// lookup, not a categorisation decision - INTERVIEW_STAGE_STATUSES/
+// OFFER_STAGE_STATUSES/UNRESPONDED_STATUSES (imported above, unchanged)
+// remain the single source of truth for which statuses mean what; this map
+// only tells sumStatusCounts where to find each status's count.
+const STATUS_COUNT_COLUMN_BY_STATUS: Record<
+  ApplicationStatus,
+  keyof StatusCountColumns
+> = {
+  Wishlist: "wishlist_count",
+  Applied: "applied_count",
+  "Recruiter Contact": "recruiter_contact_count",
+  "HR Interview": "hr_interview_count",
+  "Technical Interview": "technical_interview_count",
+  "Final Interview": "final_interview_count",
+  Offer: "offer_count",
+  Accepted: "accepted_count",
+  Rejected: "rejected_count",
+};
+
+function sumStatusCounts(
+  row: StatusCountColumns,
+  statuses: ApplicationStatus[]
+): number {
+  return statuses.reduce(
+    (sum, status) => sum + row[STATUS_COUNT_COLUMN_BY_STATUS[status]],
+    0
+  );
+}
+
+// Company/CV/Monthly Analytics (Phase 21): counts/rates are now sourced
+// from a Phase 21 statistics view (one row per group, GROUP BY in SQL)
+// instead of being filtered/counted here - same numbers, computed by the
+// database instead of by iterating `apps`. Average Response Time still
+// needs per-application history data the views don't carry, so `apps` is
+// still grouped by the same key here, purely to feed
+// computeAverageResponseTimeDays (unchanged) per group. Source Analytics
+// has no corresponding view (DATABASE.md reserves no `source_statistics`
+// name) and keeps using computeGroupAnalytics above, unchanged.
+export function computeGroupAnalyticsFromStatistics(
+  statisticsRows: GroupStatisticsRow[],
+  apps: AnalyticsApplicationRow[],
+  historyFacts: Map<string, ApplicationHistoryFacts>,
+  keyOf: (app: AnalyticsApplicationRow) => string | null
+): GroupAnalyticsRow[] {
+  const appsByGroup = new Map<string, AnalyticsApplicationRow[]>();
+  for (const app of apps) {
+    const key = keyOf(app);
+    if (!key) continue;
+    const group = appsByGroup.get(key) ?? [];
+    group.push(app);
+    appsByGroup.set(key, group);
+  }
+
+  return statisticsRows.map((row) => {
+    const responses = row.total_count - sumStatusCounts(row, UNRESPONDED_STATUSES);
+    const interviews = sumStatusCounts(row, INTERVIEW_STAGE_STATUSES);
+    const offers = sumStatusCounts(row, OFFER_STAGE_STATUSES);
+
+    return {
+      id: row.id,
+      name: row.name,
+      applications: row.total_count,
+      responses,
+      interviews,
+      offers,
+      accepted: row.accepted_count,
+      rejected: row.rejected_count,
+      responseRate: toRate(responses, row.total_count),
+      interviewRate: toRate(interviews, row.total_count),
+      offerRate: toRate(offers, row.total_count),
+      averageResponseTimeDays: computeAverageResponseTimeDays(
+        appsByGroup.get(row.id) ?? [],
+        historyFacts
+      ),
+    };
+  });
+}
+
+// Overview (Phase 21): the same {total, interviews, offers, responded}
+// shape computeOverview (below) has always taken, now derived from the
+// dashboard_metrics view instead of ApplicationStatsService.getDashboardCounts.
+// No row is returned by the view when the user has no applications, same as
+// any other GROUP BY over zero matching rows - defaults to all zeros.
+export function deriveOverviewCounts(row: StatusCountColumns | null): {
+  total: number;
+  interviews: number;
+  offers: number;
+  responded: number;
+} {
+  if (!row) {
+    return { total: 0, interviews: 0, offers: 0, responded: 0 };
+  }
+  return {
+    total: row.total_count,
+    interviews: sumStatusCounts(row, INTERVIEW_STAGE_STATUSES),
+    offers: sumStatusCounts(row, OFFER_STAGE_STATUSES),
+    responded: row.total_count - sumStatusCounts(row, UNRESPONDED_STATUSES),
+  };
 }
 
 // ANALYTICS_ENGINE.md "Funnel Analytics": for each of the 7 stages, how many

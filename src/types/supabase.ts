@@ -248,8 +248,110 @@ export type Database = {
         Relationships: [];
       };
     };
-    Views: Record<never, never>;
-    Functions: Record<never, never>;
+    Views: {
+      dashboard_metrics: {
+        Row: {
+          user_id: string;
+          wishlist_count: number;
+          applied_count: number;
+          recruiter_contact_count: number;
+          hr_interview_count: number;
+          technical_interview_count: number;
+          final_interview_count: number;
+          offer_count: number;
+          accepted_count: number;
+          rejected_count: number;
+          total_count: number;
+        };
+        Relationships: [];
+      };
+      company_statistics: {
+        Row: {
+          user_id: string;
+          id: string;
+          name: string;
+          wishlist_count: number;
+          applied_count: number;
+          recruiter_contact_count: number;
+          hr_interview_count: number;
+          technical_interview_count: number;
+          final_interview_count: number;
+          offer_count: number;
+          accepted_count: number;
+          rejected_count: number;
+          total_count: number;
+        };
+        Relationships: [];
+      };
+      cv_statistics: {
+        Row: {
+          user_id: string;
+          id: string;
+          name: string;
+          wishlist_count: number;
+          applied_count: number;
+          recruiter_contact_count: number;
+          hr_interview_count: number;
+          technical_interview_count: number;
+          final_interview_count: number;
+          offer_count: number;
+          accepted_count: number;
+          rejected_count: number;
+          total_count: number;
+        };
+        Relationships: [];
+      };
+      monthly_statistics: {
+        Row: {
+          user_id: string;
+          id: string;
+          name: string;
+          wishlist_count: number;
+          applied_count: number;
+          recruiter_contact_count: number;
+          hr_interview_count: number;
+          technical_interview_count: number;
+          final_interview_count: number;
+          offer_count: number;
+          accepted_count: number;
+          rejected_count: number;
+          total_count: number;
+        };
+        Relationships: [];
+      };
+    };
+    Functions: {
+      create_application_with_genesis: {
+        Args: {
+          p_user_id: string;
+          p_company_id: string;
+          p_cv_version_id: string;
+          p_position: string;
+          p_application_date: string | null;
+          p_job_url: string | null;
+          p_location: string | null;
+          p_work_mode: Database["public"]["Enums"]["work_mode"] | null;
+          p_employment_type:
+            | Database["public"]["Enums"]["employment_type"]
+            | null;
+          p_source: Database["public"]["Enums"]["application_source"] | null;
+          p_salary_min: number | null;
+          p_salary_max: number | null;
+          p_currency: string;
+        };
+        Returns: Database["public"]["Tables"]["applications"]["Row"];
+      };
+      transition_application_status: {
+        Args: {
+          p_user_id: string;
+          p_application_id: string;
+          p_previous_status: Database["public"]["Enums"]["application_status"];
+          p_new_status: Database["public"]["Enums"]["application_status"];
+          p_application_date: string | null;
+        };
+        Returns: undefined;
+      };
+    };
     Enums: {
       work_mode: "Remote" | "Hybrid" | "On Site";
       employment_type:

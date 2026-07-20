@@ -89,7 +89,7 @@ export const ApplicationStatusService = {
 
   // BUSINESS_RULES.md "Allowed State Transitions" (APPLICATION_STATUS_TRANSITIONS
   // is the single source of truth) and "Status History": every change
-  // creates a history record via ApplicationStatusHistoryRepository.createTransition,
+  // creates a history record via ApplicationRepository.transitionStatus,
   // which the sync_current_status trigger (Phase 3) then reflects onto
   // applications.current_status automatically - this Service never writes
   // current_status directly (ADR-017).
@@ -127,6 +127,7 @@ export const ApplicationStatusService = {
     // BUSINESS_RULES.md "Date Handling": "these dates must never be
     // inferred" - so a missing date blocks the transition instead of being
     // defaulted to today.
+    let dateToApply: string | undefined;
     if (
       needsApplicationDateForTransition(
         previousStatus,
@@ -144,30 +145,23 @@ export const ApplicationStatusService = {
           },
         };
       }
-
-      const dateUpdate = await ApplicationRepository.update(userId, id, {
-        application_date: date,
-      });
-      if (dateUpdate.error) {
-        return {
-          success: false,
-          error: {
-            message: "Something went wrong while setting the application date.",
-            code: ERROR_CODES.INTERNAL_ERROR,
-          },
-        };
-      }
+      dateToApply = date;
     }
 
-    const { error: historyError } =
-      await ApplicationStatusHistoryRepository.createTransition(
+    // transition_application_status (Phase 20) writes the application_date
+    // (when supplied) and the history row atomically - see that migration
+    // for why. sync_current_status (Phase 3) still reflects the new status
+    // onto applications.current_status automatically.
+    const { error: transitionError } =
+      await ApplicationRepository.transitionStatus(
         userId,
         id,
         previousStatus,
-        newStatus
+        newStatus,
+        dateToApply
       );
 
-    if (historyError) {
+    if (transitionError) {
       return {
         success: false,
         error: {
