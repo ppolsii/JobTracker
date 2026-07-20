@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { ROUTES } from "@/config/routes";
@@ -9,7 +8,7 @@ import { CompanyCreateButton } from "@/features/companies/components/CompanyCrea
 import { CompanySearchBar } from "@/features/companies/components/CompanySearchBar";
 import { listCompaniesSchema } from "@/features/companies/schemas/company.schema";
 import { CompanyService } from "@/features/companies/services/company.service";
-import { Button } from "@/shared/components/ui/button";
+import { PaginationControls } from "@/shared/components/PaginationControls";
 
 export const metadata: Metadata = { title: "Companies" };
 
@@ -51,41 +50,11 @@ export default async function CompaniesPage({
 
       <CompaniesTable companies={companies} pageSize={limit} />
 
-      {pageCount > 1 ? (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>
-            Page {page} of {pageCount}
-          </span>
-          <div className="flex gap-2">
-            {page > 1 ? (
-              <Button
-                variant="outline"
-                size="sm"
-                render={<Link href={buildPageUrl(page - 1, query)} />}
-              >
-                Previous
-              </Button>
-            ) : (
-              <Button variant="outline" size="sm" disabled>
-                Previous
-              </Button>
-            )}
-            {page < pageCount ? (
-              <Button
-                variant="outline"
-                size="sm"
-                render={<Link href={buildPageUrl(page + 1, query)} />}
-              >
-                Next
-              </Button>
-            ) : (
-              <Button variant="outline" size="sm" disabled>
-                Next
-              </Button>
-            )}
-          </div>
-        </div>
-      ) : null}
+      <PaginationControls
+        page={page}
+        pageCount={pageCount}
+        buildHref={(p) => buildPageUrl(p, query)}
+      />
     </div>
   );
 }

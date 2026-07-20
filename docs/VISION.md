@@ -8,7 +8,9 @@ Version: 1.0
 
 # Vision Statement
 
-JobTracker Insights is a SaaS platform that helps job seekers improve their job search through data analysis.
+JobTracker Insights is a personal job search tracking and analytics platform.
+
+Its purpose is to help users organize, measure and understand their own job search using their own historical data.
 
 The platform is not designed to find jobs.
 
@@ -18,7 +20,17 @@ The platform is not an AI assistant.
 
 The platform does not compete with LinkedIn.
 
-Instead, JobTracker transforms job search activity into measurable information that allows users to continuously improve their strategy.
+The application never invents recommendations.
+
+It never claims that one CV is objectively better than another.
+
+It never claims to know why a candidate succeeds or fails.
+
+Instead, it presents objective metrics and analytics derived from the user's own activity.
+
+The application reports facts. The user draws conclusions.
+
+The product transforms job searching into a measurable process.
 
 Think about JobTracker as:
 
@@ -426,6 +438,10 @@ Nothing else.
 
 # Explicitly Out of Scope
 
+## Permanently Out of Scope
+
+These are not deferred. They contradict the product vision and must not be implemented in any future version, unless explicitly reframed as objective analytics derived entirely from the user's own data.
+
 Artificial Intelligence.
 
 Interview simulator.
@@ -436,13 +452,17 @@ CV generation.
 
 Cover letter generation.
 
-Browser extensions.
-
-LinkedIn integration.
-
 Job recommendations.
 
 Salary prediction.
+
+## Deferred to Future Versions
+
+These are ordinary organisational and integration features. They do not conflict with the vision and may be implemented later.
+
+Browser extensions.
+
+LinkedIn integration.
 
 Calendar synchronisation.
 
@@ -459,8 +479,6 @@ Recruiter marketplace.
 Public API.
 
 Native mobile apps.
-
-These features belong to future versions.
 
 ---
 

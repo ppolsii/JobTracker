@@ -535,7 +535,9 @@ GET
 
 /export/csv
 
-Exports all user data.
+Exports every application (including archived), denormalized with Company and CV Version names.
+
+CSV is a single flat table, so it does not include standalone Companies, CV Versions, or Notes with no associated application.
 
 ---
 
@@ -543,7 +545,7 @@ GET
 
 /export/json
 
-Exports all user data.
+Exports every user-owned entity: Companies, CV Versions, Applications, Status History, and Notes - including archived records.
 
 ---
 

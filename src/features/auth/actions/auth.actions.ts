@@ -80,3 +80,24 @@ export async function updatePasswordAction(
 
   redirect(ROUTES.LOGIN);
 }
+
+// Phase 15 (Settings) "Account" - changing your password while already
+// logged in, not completing a forgot-password recovery link. Reuses the
+// same schema and the same AuthService.updatePassword call as
+// updatePasswordAction above (no password-changing logic is duplicated);
+// only the surrounding flow differs, so it isn't shared: this requires an
+// existing authenticated session instead of a recovery session, and stays
+// on the Settings page afterward instead of redirecting to /login.
+export async function changePasswordAction(
+  input: unknown
+): Promise<ActionResult> {
+  const auth = await AuthService.requireUserId();
+  if (!auth.success) return auth;
+
+  const parsed = updatePasswordSchema.safeParse(input);
+  if (!parsed.success) {
+    return validationError(parsed.error.issues[0]?.message ?? "Invalid input.");
+  }
+
+  return AuthService.updatePassword(parsed.data.password);
+}

@@ -13,3 +13,11 @@ export const ROUTES = {
   ANALYTICS: "/analytics",
   SETTINGS: "/settings",
 } as const;
+
+// First dynamic route in the app (Phase 9's Application Detail page) - a
+// small builder here avoids re-interpolating the same path shape at each
+// call site (the table's "View" link, the status-change action's
+// revalidatePath, the detail page's own back-link).
+export function applicationDetailRoute(id: string): string {
+  return `${ROUTES.APPLICATIONS}/${id}`;
+}

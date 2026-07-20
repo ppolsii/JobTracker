@@ -1,16 +1,18 @@
-import { siteConfig } from "@/config/site";
+import { redirect } from "next/navigation";
 
-export default function Home() {
-  return (
-    <main className="flex flex-1 items-center justify-center p-8">
-      <div className="text-center">
-        <h1 className="text-2xl font-semibold text-foreground">
-          {siteConfig.name}
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Project scaffold ready. Features are implemented in later phases.
-        </p>
-      </div>
-    </main>
-  );
+import { ROUTES } from "@/config/routes";
+import { AuthService } from "@/features/auth/services/auth.service";
+
+// "/" is a pure authentication entry point (no marketing Landing Page yet -
+// see UI_SYSTEM.md "Landing Page", future work). Mirrors the exact
+// getCurrentUser()-then-redirect pattern already used by
+// (auth)/layout.tsx and (dashboard)/layout.tsx.
+export default async function Home() {
+  const user = await AuthService.getCurrentUser();
+
+  if (user) {
+    redirect(ROUTES.DASHBOARD);
+  }
+
+  redirect(ROUTES.LOGIN);
 }

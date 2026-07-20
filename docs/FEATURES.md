@@ -425,7 +425,9 @@ JSON
 
 ## Acceptance Criteria
 
-Export contains every user-owned entity.
+JSON export contains every user-owned entity, including archived records.
+
+CSV export contains every application (including archived), denormalized with Company and CV Version names.
 
 ---
 
@@ -489,7 +491,9 @@ Reusable components.
 
 # Excluded Features
 
-The following are intentionally excluded from the MVP.
+## Permanently Excluded
+
+These are not deferred to a later MVP. They contradict the product vision and must not be implemented in any future version, unless explicitly reframed as objective analytics derived entirely from the user's own data.
 
 AI
 
@@ -498,6 +502,12 @@ Interview simulator
 CV optimization
 
 Cover Letter Generator
+
+Gamification
+
+## Excluded from the MVP
+
+The following are ordinary organisational and integration features, intentionally excluded from the MVP but not in conflict with the vision. They may be implemented later.
 
 LinkedIn Import
 
@@ -512,8 +522,6 @@ Recruiter CRM
 Public API
 
 Mobile Application
-
-Gamification
 
 Social Features
 
@@ -541,9 +549,9 @@ Public API
 
 Native Mobile App
 
-AI Assistant
-
 These features must not be implemented now.
+
+An AI Assistant, or any feature that generates recommendations, CV feedback, or subjective advice, is not a deferred feature. It is permanently excluded from the product - see VISION.md's "Permanently Out of Scope" section.
 
 ---
 

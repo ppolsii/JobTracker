@@ -555,7 +555,11 @@ Descending
 
 Users own their data.
 
-Users must be able to export all their information.
+Users must be able to export all their information, including archived (soft-deleted) records - soft delete never actually erases data.
+
+JSON exports every user-owned entity.
+
+CSV exports a single flat table of Applications, denormalized with Company and CV Version names.
 
 Preferred formats
 

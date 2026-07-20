@@ -30,6 +30,20 @@ export const CompanyRepository = {
       .maybeSingle();
   },
 
+  // Used by ApplicationService to validate a company_id before an
+  // application references it (owned by this user, not archived) - a
+  // plain FK only guarantees the row exists, not that it's still active.
+  async findActiveById(userId: string, id: string) {
+    const supabase = await createClient();
+    return supabase
+      .from("companies")
+      .select("id, name")
+      .eq("user_id", userId)
+      .eq("id", id)
+      .is("deleted_at", null)
+      .maybeSingle();
+  },
+
   async list(
     userId: string,
     { query, page, limit }: { query?: string; page: number; limit: number }
@@ -85,5 +99,22 @@ export const CompanyRepository = {
       .eq("user_id", userId)
       .eq("company_id", companyId)
       .is("deleted_at", null);
+  },
+
+  // Post-MVP technical debt resolution (KNOWN_ISSUES.md "Phase 14 - Export"):
+  // `list` deliberately excludes archived companies for every existing
+  // caller (list pages, pickers, search) - correct there, but Export's own
+  // "export all your information" (BUSINESS_RULES.md) needs archived rows
+  // too, since soft-delete never actually erases data. A separate method
+  // keeps that one exception isolated to Export instead of adding an
+  // `includeArchived` branch to the widely-used `list`. No pagination,
+  // matching every other Export bulk-read in this codebase.
+  async listAllIncludingArchived(userId: string) {
+    const supabase = await createClient();
+    return supabase
+      .from("companies")
+      .select(COMPANY_COLUMNS)
+      .eq("user_id", userId)
+      .order("name", { ascending: true });
   },
 };

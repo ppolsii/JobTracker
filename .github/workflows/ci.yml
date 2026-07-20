@@ -1,0 +1,42 @@
+name: CI
+
+# DEPLOYMENT.md "Continuous Integration": "Every Pull Request should execute:
+# Type Checking, Linting, Build, Unit Tests. If any step fails: Deployment
+# must stop." Runs on pushes to main too, matching "Continuous Deployment"'s
+# same four requirements before Vercel's own GitHub integration deploys.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    env:
+      # Required at build time (src/config/env.ts throws if missing) even
+      # though no live network call happens during a static build - these
+      # must be configured as repository secrets for CI to pass.
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type Check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit Tests
+        run: npm run test

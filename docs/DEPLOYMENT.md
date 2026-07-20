@@ -214,8 +214,6 @@ NEXT_PUBLIC_SUPABASE_URL
 
 NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-SUPABASE_SERVICE_ROLE_KEY
-
 ---
 
 Optional
@@ -223,6 +221,14 @@ Optional
 NEXT_PUBLIC_APP_URL
 
 NODE_ENV
+
+---
+
+Not used by the current MVP
+
+SUPABASE_SERVICE_ROLE_KEY
+
+No code path in the current implementation uses the Supabase Admin API or a service-role client - every Supabase call goes through the anon/authenticated client, with Row Level Security as the actual enforcement. This key would only become required if a future version implements a feature needing elevated privileges (e.g. account deletion via the Auth Admin API, deferred - see `KNOWN_ISSUES.md`). Do not configure or expose it until such a feature is actually implemented.
 
 ---
 

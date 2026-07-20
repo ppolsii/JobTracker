@@ -10,6 +10,7 @@ A job search analytics platform that turns application history into actionable i
 - [Supabase](https://supabase.com) (PostgreSQL, Auth, Row Level Security)
 - [React Hook Form](https://react-hook-form.com) + [Zod](https://zod.dev) validation
 - ESLint + Prettier
+- [Vitest](https://vitest.dev)
 
 ## Requirements
 
@@ -43,6 +44,8 @@ Other useful commands during development:
 npm run lint          # run ESLint
 npm run format        # format the codebase with Prettier
 npm run format:check  # check formatting without writing changes
+npm run typecheck     # run the TypeScript compiler without emitting output
+npm run test          # run the test suite (Vitest)
 ```
 
 ## Build
@@ -51,3 +54,7 @@ npm run format:check  # check formatting without writing changes
 npm run build
 npm run start   # serve the production build locally
 ```
+
+## Continuous Integration
+
+Every push and pull request against `main` runs type checking, linting, the production build, and the test suite (`.github/workflows/ci.yml`) - see `docs/DEPLOYMENT.md`. This requires `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to be configured as repository secrets.

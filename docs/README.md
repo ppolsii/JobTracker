@@ -202,12 +202,21 @@ Everything else belongs to future versions.
 
 # Explicitly Out of Scope
 
-Do NOT implement:
+## Permanently Out of Scope
+
+Do NOT implement, in the MVP or in any future version, unless explicitly reframed as objective analytics derived entirely from the user's own data:
 
 - AI
 - CV optimisation
 - Interview simulator
 - Cover Letter Generator
+- Salary prediction
+- Job recommendation engine
+
+## Excluded from the MVP
+
+Ordinary organisational and integration features, intentionally excluded from the MVP but not in conflict with the vision. Do NOT implement now:
+
 - LinkedIn integration
 - Browser extension
 - Mobile App
@@ -216,11 +225,7 @@ Do NOT implement:
 - Chat
 - Notifications
 - Email automation
-- Salary prediction
-- Job recommendation engine
 - Recruiter features
-
-These features are intentionally excluded from the MVP.
 
 ---
 

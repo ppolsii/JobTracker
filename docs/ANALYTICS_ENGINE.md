@@ -16,7 +16,7 @@ It competes by transforming historical job search data into actionable insights.
 
 Every metric described here must be deterministic.
 
-Artificial Intelligence is explicitly forbidden in the MVP.
+Artificial Intelligence is explicitly forbidden, in the MVP and in every future version.
 
 ---
 
@@ -706,7 +706,7 @@ Avoid client-side calculations.
 
 # Future Analytics
 
-Future versions may include:
+Future versions may include additional objective analytics, entirely derived from the user's own historical data:
 
 Interview Feedback Analysis
 
@@ -722,11 +722,9 @@ Weekly Objectives
 
 Career Progress Reports
 
-Predictive Analytics
-
-AI Recommendations
-
 These features are outside the MVP.
+
+Predictive Analytics and AI Recommendations are not deferred features. They are permanently excluded from the product - see the Forbidden Analytics section below.
 
 ---
 

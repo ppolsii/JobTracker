@@ -1,9 +1,9 @@
 import { CompanyRepository } from "@/features/companies/repositories/company.repository";
 import type { Company } from "@/features/companies/types/company.types";
 import { ERROR_CODES } from "@/shared/constants/error-codes";
+import { POSTGRES_ERROR_CODES } from "@/shared/constants/postgres-error-codes";
+import { normalize } from "@/shared/utils/normalize";
 import type { ActionResult } from "@/types/action-result";
-
-const UNIQUE_VIOLATION = "23505";
 
 interface CompanyFields {
   name: string;
@@ -12,13 +12,6 @@ interface CompanyFields {
   size?: string;
   country?: string;
   city?: string;
-}
-
-// Empty strings from untouched optional form fields become null, matching
-// DATABASE.md's nullable columns rather than storing empty strings.
-function normalize(value: string | undefined): string | null {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : null;
 }
 
 function duplicateNameError(name: string): ActionResult<never> {
@@ -57,7 +50,7 @@ export const CompanyService = {
     });
 
     if (error) {
-      if (error.code === UNIQUE_VIOLATION) {
+      if (error.code === POSTGRES_ERROR_CODES.UNIQUE_VIOLATION) {
         return duplicateNameError(name);
       }
       return {
@@ -94,7 +87,7 @@ export const CompanyService = {
     });
 
     if (error) {
-      if (error.code === UNIQUE_VIOLATION) {
+      if (error.code === POSTGRES_ERROR_CODES.UNIQUE_VIOLATION) {
         return duplicateNameError(name);
       }
       return {
@@ -170,10 +163,7 @@ export const CompanyService = {
       limit: number;
     }>
   > {
-    const { data, error, count } = await CompanyRepository.list(
-      userId,
-      params
-    );
+    const { data, error, count } = await CompanyRepository.list(userId, params);
 
     if (error) {
       return {
@@ -194,5 +184,25 @@ export const CompanyService = {
         limit: params.limit,
       },
     };
+  },
+
+  // Backs ExportService only - see CompanyRepository.listAllIncludingArchived.
+  async listAllIncludingArchived(
+    userId: string
+  ): Promise<ActionResult<Company[]>> {
+    const { data, error } =
+      await CompanyRepository.listAllIncludingArchived(userId);
+
+    if (error) {
+      return {
+        success: false,
+        error: {
+          message: "Something went wrong while loading companies.",
+          code: ERROR_CODES.INTERNAL_ERROR,
+        },
+      };
+    }
+
+    return { success: true, data: data ?? [] };
   },
 };
