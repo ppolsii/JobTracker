@@ -708,6 +708,94 @@ timestamp
 
 ---
 
+# Version 2 Tables
+
+Tables introduced after the MVP. Documented separately so the "Tables"/"Foreign Keys" sections above remain an accurate record of what the MVP itself contained.
+
+# subscriptions
+
+Version 2, Phase 23 (`IMPLEMENTATION_ORDER_V2.md`) - infrastructure only. Every user has exactly one row, created automatically at signup (`handle_new_user`). No feature reads this table to gate access yet; `plan` is never written beyond its `free` default until a future phase decides how it should be derived.
+
+Columns
+
+id
+
+uuid
+
+Primary Key
+
+---
+
+user_id
+
+uuid
+
+FK -> users
+
+Unique - exactly one subscription row per user.
+
+---
+
+plan
+
+enum (`subscription_plan`)
+
+Required. Default `free`. Not written by anything beyond its default in Phase 23.
+
+---
+
+status
+
+enum (`subscription_status`)
+
+Nullable. Mirrors Stripe's own `Subscription.status` values as-is - never reinterpreted.
+
+---
+
+stripe_customer_id
+
+text
+
+Nullable. Unique.
+
+---
+
+stripe_subscription_id
+
+text
+
+Nullable. Unique.
+
+---
+
+current_period_end
+
+timestamp
+
+Nullable.
+
+---
+
+created_at
+
+timestamp
+
+---
+
+updated_at
+
+timestamp
+
+Constraints
+
+`(user_id)`, `(stripe_customer_id)`, `(stripe_subscription_id)` are each unique.
+
+Row Level Security
+
+Users may only `select` their own row (`user_id = auth.uid()`). No `insert`/`update`/`delete` policy or grant exists for `authenticated` - a user must never be able to set their own plan/status directly. The only writers are the `handle_new_user` trigger (the genesis row) and the billing webhook (`app/api/webhooks/stripe`), which uses the Supabase service-role client - see `ARCHITECTURE.md` "Repositories" for why an authenticated-user RLS policy could not safely allow that write instead.
+
+---
+
 # Enums
 
 work_mode
@@ -769,6 +857,36 @@ Company Website
 Recruiter
 
 Other
+
+---
+
+subscription_plan (Version 2, Phase 23)
+
+free
+
+pro
+
+---
+
+subscription_status (Version 2, Phase 23)
+
+Mirrors Stripe's own `Subscription.status` values exactly.
+
+incomplete
+
+incomplete_expired
+
+trialing
+
+active
+
+past_due
+
+canceled
+
+unpaid
+
+paused
 
 ---
 

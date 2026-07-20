@@ -815,3 +815,66 @@ Implemented the four SQL views `DATABASE.md` reserved (`dashboard_metrics`, `cv_
 - Added a parity test (see "Added" above) directly comparing `computeGroupAnalyticsFromStatistics`'s output against `computeGroupAnalytics`'s output for identical underlying application data - both produce the same `applications`/`responses`/`interviews`/`offers`/`accepted`/`rejected`/rates/`averageResponseTimeDays` values.
 - `npm run typecheck`, `npm run lint`, `npm run build`, and `npm run test` (97 tests, 11 files) all pass.
 - Not verified against a live database in this environment - same persistent limitation as every phase since Phase 4. The view SQL was reviewed by hand for RLS (`security_invoker` + explicit `user_id` filter) and grouping-key correctness (in particular `monthly_statistics`'s `to_char(application_date, 'YYYY-MM')` matching `application_date.slice(0, 7)` exactly) but not executed.
+
+### Post-Phase 21 cleanup
+
+- Removed `DashboardMetricsRow` from `analytics.repository.ts` - an unused exported type left behind once `deriveOverviewCounts` was written against the more precise `StatusCountColumns` instead. No behavior change; confirmed via a full quality-gate run (typecheck/lint/test/build all unchanged).
+
+---
+
+## Phase 22 — Composite-FK Embedded-Query Verification (2026-07-20)
+
+Re-examined `ApplicationRepository.list`'s composite-FK embedded query (open since Phase 8), per `IMPLEMENTATION_ORDER_V2.md`. No feature, business rule, or code change - this phase's own definition scopes it to verification, with a code change only if verification failed.
+
+### Reviewed
+
+- `companies!inner(name), cv_versions!inner(name)` in `ApplicationRepository.list` (and the identically-shaped `findById`/`listAllForAnalytics`/`listAllIncludingArchived`), embedded through the composite foreign keys `applications_company_owner_fk`/`applications_cv_version_owner_fk` (`(company_id, user_id)` / `(cv_version_id, user_id)`). Re-examined against PostgREST's documented composite-FK embedding behavior: exactly one FK path connects `applications` to `companies` and exactly one to `cv_versions` - no relationship ambiguity for PostgREST to resolve, despite `user_id` also belonging to a separate FK to `users`. A composite FK embed joins on every column of the constraint, matching the ownership semantics this schema already depends on elsewhere; `unique (id, user_id)` on both target tables guarantees the single-row match `!inner` requires. Full reasoning recorded in `KNOWN_ISSUES.md`.
+
+### Changed
+
+- None. Per this phase's explicit instruction ("if an embedded query already behaves correctly, leave it unchanged"), the conclusion above did not warrant applying the documented fallback, so `ApplicationRepository.list`/`ApplicationService.list` were left untouched.
+
+### Verification
+
+- `npm run typecheck`, `npm run lint`, `npm run build`, and `npm run test` (97 tests, 11 files) all pass, unchanged from before this phase (no source file was modified).
+- Not executed against a live database in this environment - same persistent limitation as every phase since Phase 4. The conclusion above is reasoning-based, not execution-verified; `KNOWN_ISSUES.md` records this explicitly and keeps the fallback ready in case a future live confirmation contradicts it.
+
+---
+
+## Phase 23 — Billing Infrastructure & Subscription Data Model (2026-07-21)
+
+Introduced the project's first Route Handler and its first external paid-service dependency, and established the subscription data model, per `IMPLEMENTATION_ORDER_V2.md`. Infrastructure only - no Stripe checkout, no subscription enforcement, no usage limits, no billing UI. Nothing reads the new table to gate a feature yet.
+
+### Added
+
+- **Dependency**: `stripe` (official Node SDK, v22.3.2) - approved before installation per `IMPLEMENTATION_RULES.md`. Needed for correct, timing-safe webhook signature verification (`stripe.webhooks.constructEvent`); hand-rolling this is a real security risk the SDK exists specifically to avoid.
+- `supabase/migrations/20260721090000_billing_subscriptions.sql` - `subscription_plan` (`free`/`pro`) and `subscription_status` (mirrors Stripe's own `Subscription.status` values exactly) enums; the `subscriptions` table (one row per user, `plan` defaults to `free`, RLS read-only for the owning user with no client-writable policy at all); extends `handle_new_user` to also insert the genesis subscription row, the same multi-insert-in-one-function shape `create_application_with_genesis` (Phase 20) already established.
+- `src/lib/stripe.ts` - lazy Stripe client + webhook-secret accessors. Deliberately not constructed at module load, so `next build`'s Route Handler collection never fails just because Stripe isn't configured in this environment (it isn't - no live Stripe project exists here, same category of limitation as every unconfigured live service throughout this project).
+- `src/lib/supabase/admin.ts` (new) - a Supabase client using the service-role key, bypassing RLS. Lazily constructed for the same build-safety reason as `lib/stripe.ts`. See "Architecture decision" below for why this was needed now rather than in the originally planned Phase 39.
+- `src/features/billing/{types,repositories,services}` - `BillingRepository` (normal RLS-protected read, `getByUserId`), `BillingWebhookRepository` (admin-client write, `syncByStripeCustomerId` - update-only, never creates a row), `BillingService` (thin pass-through read, unused by anything yet), `BillingWebhookService` (translates a verified Stripe subscription event into the table's own columns - mechanical field mapping only, never touches `plan`).
+- `src/app/api/webhooks/stripe/route.ts` - the application's first Route Handler. Verifies the Stripe signature, then delegates to `BillingWebhookService`. Returns 400 on a missing/invalid signature, 500 if processing the verified event fails (so Stripe's own retry mechanism can recover from a transient error), 200 otherwise.
+- `.env.example` - added `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` (`SUPABASE_SERVICE_ROLE_KEY` was already present, unused until now).
+
+### Changed
+
+- `src/config/env.ts` - added `stripeSecretKey`, `stripeWebhookSecret`, `supabaseServiceRoleKey`, all optional (not `requireEnvVar`'d) since only the webhook route depends on them and the app must keep building/running without them configured.
+- `src/types/supabase.ts` - added the `subscriptions` table and the two new enums.
+
+### Architecture decisions
+
+- **Two approval checkpoints before writing code**, per `IMPLEMENTATION_RULES.md`'s dependency-approval and "when to stop: a paid service is required" rules: (1) whether to install the `stripe` package at all, (2) how the webhook should write to `subscriptions` given Stripe's request carries no Supabase session. Both were raised to and answered by the user before implementation began.
+- **Service-role client introduced in this phase, not Phase 39 as originally planned.** A plain RLS policy cannot express "trust this request because Stripe's signature was already verified in application code" - RLS only ever sees `auth.uid()`, which is null for a Stripe-originated request. A `SECURITY DEFINER` RPC callable by `anon` was considered and rejected: granting `anon` execute would make the function directly callable by anyone with the public anon key via Supabase's REST API, completely bypassing the Route Handler's own signature check. The service-role client, used only inside this one already-verified Route Handler, is the standard, secure pattern for this exact situation. `ARCHITECTURE.md` "Repositories" now documents this as a second, narrow exception alongside the existing RPC-for-atomicity one, and `BillingWebhookRepository` is kept in its own file so this elevated-privilege path stays isolated and auditable, mirroring `AuthRepository`/`AuthBrowserRepository`'s existing split.
+- **The webhook never writes `plan`.** Only `status`, `stripe_customer_id`, `stripe_subscription_id`, `current_period_end` are ever touched, mirroring Stripe's payload as-is. Deciding what `plan` should be is a real product decision (`BUSINESS_RULES.md` "Billing" - drafted, not yet enforced) left entirely to Phase 24.
+- **The webhook only updates, never creates, a `subscriptions` row.** Without Stripe Checkout (explicitly out of scope this phase), there is no reliable way for a webhook alone to know which user a brand-new `stripe_customer_id` belongs to. Every user already has a row from `handle_new_user`, so this is a safe, intentional no-op until Phase 24 links a customer id to a user during checkout.
+
+### Documentation updated
+
+- `DATABASE.md` - new "Version 2 Tables" section (`subscriptions`, fully documented) and the two new enums.
+- `ARCHITECTURE.md` - new "Route Handlers" subsection (scoped to external-service entry points only); "Repositories" extended with the service-role exception.
+- `BUSINESS_RULES.md` - new "Billing" section, explicitly marked drafted/not yet enforced.
+- `DEPLOYMENT.md` - `SUPABASE_SERVICE_ROLE_KEY` moved from "not used by the current MVP" to "required for the billing webhook"; added `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`.
+
+### Verification
+
+- `npm run typecheck`, `npm run lint`, `npm run test` (97 tests, 11 files, unchanged), and `npm run build` all pass. The build correctly collects `/api/webhooks/stripe` as a dynamic route without failing on the missing Stripe/service-role environment variables, confirming the lazy-construction design works as intended.
+- Not verified against a live Stripe project or live database in this environment - same persistent limitation as every phase since Phase 4. The Stripe SDK's actual type shapes (e.g. `current_period_end` living on `subscription.items.data[]`, not the top-level `Subscription` object, in SDK v22) were confirmed by inspecting the installed package's own type declarations, not by receiving a real webhook.

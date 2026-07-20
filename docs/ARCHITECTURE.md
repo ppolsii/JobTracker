@@ -103,6 +103,24 @@ Business logic belongs to Services.
 
 ---
 
+## Route Handlers
+
+Version 2, Phase 23 (`IMPLEMENTATION_ORDER_V2.md`) introduced this project's first Route Handler (`app/api/webhooks/stripe/route.ts`). This is a narrow, explicitly scoped exception, not a general second way to build request handling.
+
+Route Handlers exist only for entry points a Server Action cannot serve - specifically, an external service (e.g. Stripe) calling this application directly, over plain HTTP, with no Next.js form submission or client-side `fetch` involved. Every other operation in this application remains a Server Action.
+
+A Route Handler used for this purpose is responsible for:
+
+- Verifying the external caller's authenticity (e.g. a webhook signature) - this replaces the session/cookie authentication a Server Action would otherwise rely on.
+- Calling a Service.
+- Returning a response.
+
+Same responsibility split as Server Actions otherwise: the Route Handler stays thin, business logic belongs to Services, and it must still call a Service rather than a Repository directly.
+
+Do not introduce a Route Handler for anything a Server Action can already serve.
+
+---
+
 ## Services
 
 Responsible for:
@@ -134,6 +152,8 @@ Repositories contain persistence logic only.
 Repositories never implement business rules.
 
 A Repository method may call a Postgres RPC function instead of issuing a query directly, but only to guarantee that two or more related writes commit together (atomicity) - never to hold a business decision. Which writes happen and under what conditions is still decided entirely by the Service before the Repository is called. The function itself must remain a small, generic wrapper around the writes it makes atomic (see `DATABASE.md` "Functions").
+
+Version 2, Phase 23 introduced a second, narrower exception: a Repository may use the Supabase service-role client (bypassing RLS) only when its caller has already been authenticated by some mechanism other than a Supabase session - e.g. a verified webhook signature - and only for the exact table/columns that caller needs. This exists because no RLS policy can express "trust this request because the application already verified it some other way." Such a Repository must live in its own file, separate from any Repository using the normal RLS-protected client for the same table, so the elevated-privilege path stays easy to find and audit in isolation (see `src/features/billing/repositories/billing-webhook.repository.ts`). Never use the service-role client to work around RLS for a normal, session-authenticated request.
 
 ---
 

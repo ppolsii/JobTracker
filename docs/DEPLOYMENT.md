@@ -216,19 +216,29 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 ---
 
+Required for the billing webhook (Version 2, Phase 23)
+
+SUPABASE_SERVICE_ROLE_KEY
+
+Used only by `src/lib/supabase/admin.ts`, called only from `src/features/billing/repositories/billing-webhook.repository.ts` (the Stripe webhook's write path - see `ARCHITECTURE.md` "Repositories"). No other code path uses the Supabase Admin API or a service-role client; every other Supabase call goes through the anon/authenticated client, with Row Level Security as the actual enforcement. Never expose this key to the client.
+
+STRIPE_SECRET_KEY
+
+Used only by `src/lib/stripe.ts`, called only from the webhook Route Handler.
+
+STRIPE_WEBHOOK_SECRET
+
+Used only by `src/lib/stripe.ts`, to verify that an incoming webhook request genuinely came from Stripe.
+
+All three are read lazily (not required for the application to build or start) - only a request to `/api/webhooks/stripe` depends on them. No Stripe checkout, subscription enforcement, or billing UI exists yet (`IMPLEMENTATION_ORDER_V2.md` Phase 23 is infrastructure only).
+
+---
+
 Optional
 
 NEXT_PUBLIC_APP_URL
 
 NODE_ENV
-
----
-
-Not used by the current MVP
-
-SUPABASE_SERVICE_ROLE_KEY
-
-No code path in the current implementation uses the Supabase Admin API or a service-role client - every Supabase call goes through the anon/authenticated client, with Row Level Security as the actual enforcement. This key would only become required if a future version implements a feature needing elevated privileges (e.g. account deletion via the Auth Admin API, deferred - see `KNOWN_ISSUES.md`). Do not configure or expose it until such a feature is actually implemented.
 
 ---
 

@@ -247,6 +247,42 @@ export type Database = {
         };
         Relationships: [];
       };
+      subscriptions: {
+        Row: {
+          id: string;
+          user_id: string;
+          plan: Database["public"]["Enums"]["subscription_plan"];
+          status: Database["public"]["Enums"]["subscription_status"] | null;
+          stripe_customer_id: string | null;
+          stripe_subscription_id: string | null;
+          current_period_end: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          plan?: Database["public"]["Enums"]["subscription_plan"];
+          status?: Database["public"]["Enums"]["subscription_status"] | null;
+          stripe_customer_id?: string | null;
+          stripe_subscription_id?: string | null;
+          current_period_end?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          plan?: Database["public"]["Enums"]["subscription_plan"];
+          status?: Database["public"]["Enums"]["subscription_status"] | null;
+          stripe_customer_id?: string | null;
+          stripe_subscription_id?: string | null;
+          current_period_end?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       dashboard_metrics: {
@@ -377,6 +413,16 @@ export type Database = {
         | "Company Website"
         | "Recruiter"
         | "Other";
+      subscription_plan: "free" | "pro";
+      subscription_status:
+        | "incomplete"
+        | "incomplete_expired"
+        | "trialing"
+        | "active"
+        | "past_due"
+        | "canceled"
+        | "unpaid"
+        | "paused";
     };
     CompositeTypes: Record<never, never>;
   };

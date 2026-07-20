@@ -653,6 +653,22 @@ Without requiring breaking schema changes.
 
 ---
 
+# Billing (Version 2, Phase 23 - drafted, not yet enforced)
+
+The application is preparing to support a Free and a Pro plan. This section records the rules already decided about the data model itself. It does not gate anything yet - no feature currently reads a user's plan, and no code currently depends on this section. `IMPLEMENTATION_ORDER_V2.md` Phase 24 ("Plan Gating Enforcement") is expected to extend this section with the actual per-feature limits before any gating is implemented, per this document's own precedence over implementation.
+
+Every user has exactly one subscription record.
+
+A user is created with plan `free` by default.
+
+A user may never set their own plan or subscription status directly. This is not a temporary limitation - it must remain true even after Phase 24 adds gating.
+
+Subscription status is a mirror of the payment provider's own state. The application must never invent or infer a status.
+
+Downgrading, cancelling, or a failed payment must never delete historical data (Applications, Companies, CV Versions, Notes). Plan changes affect access going forward only, never past records - consistent with this document's general soft-delete/history-preservation principle.
+
+---
+
 # Claude Instructions
 
 Treat this document as immutable.
