@@ -283,6 +283,42 @@ export type Database = {
         };
         Relationships: [];
       };
+      interview_feedback: {
+        Row: {
+          id: string;
+          application_status_history_id: string;
+          user_id: string;
+          rating: number | null;
+          format: Database["public"]["Enums"]["interview_format"] | null;
+          notes: string;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          application_status_history_id: string;
+          user_id: string;
+          rating?: number | null;
+          format?: Database["public"]["Enums"]["interview_format"] | null;
+          notes: string;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          application_status_history_id?: string;
+          user_id?: string;
+          rating?: number | null;
+          format?: Database["public"]["Enums"]["interview_format"] | null;
+          notes?: string;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       dashboard_metrics: {
@@ -423,6 +459,12 @@ export type Database = {
         | "canceled"
         | "unpaid"
         | "paused";
+      interview_format:
+        | "Phone"
+        | "Video"
+        | "On-site"
+        | "Technical"
+        | "Behavioral";
     };
     CompositeTypes: Record<never, never>;
   };

@@ -2,11 +2,16 @@ import { AnalyticsRepository } from "@/features/analytics/repositories/analytics
 import type { AnalyticsSummary } from "@/features/analytics/types/analytics.types";
 import {
   buildHistoryFactsByApplication,
+  computeAverageHiringTimeDays,
+  computeAverageOfferTimeDays,
+  computeEmploymentTypeAnalytics,
   computeFunnelAnalytics,
   computeGroupAnalytics,
   computeGroupAnalyticsFromStatistics,
   computeInsights,
   computeOverview,
+  computeTrendAnalysis,
+  computeWorkModeAnalytics,
   deriveOverviewCounts,
 } from "@/features/analytics/utils/analytics-calculations";
 import { ApplicationStatusService } from "@/features/applications/services/application-status.service";
@@ -23,6 +28,11 @@ import type { ActionResult } from "@/types/action-result";
 // computed from the bulk applications/history reads exactly as before -
 // see analytics-calculations.ts for why. This file remains orchestration
 // only: fetch, then call the pure calculation functions.
+// IMPLEMENTATION_ORDER_V2.md Phase 29: Work Mode/Employment Type Analytics
+// join Source Analytics in grouping the same bulk applications fetch (no
+// view backs either); Acceptance Rate/Average Offer/Hiring Time extend the
+// existing dashboard_metrics-derived Overview; Trend Analysis is derived
+// from the already-computed monthlyAnalytics, not a new data source.
 export const AnalyticsService = {
   async getSummary(userId: string): Promise<ActionResult<AnalyticsSummary>> {
     const [
@@ -104,9 +114,30 @@ export const AnalyticsService = {
       (app) => app.application_date?.slice(0, 7) ?? null
     ).sort((a, b) => a.id.localeCompare(b.id));
 
+    // IMPLEMENTATION_ORDER_V2.md Phase 29: Work Mode/Employment Type
+    // Analytics have no backing view (same reasoning as Source Analytics),
+    // so they group the same bulk `applications` fetch above. Average
+    // Offer/Hiring Time are computed globally across all applications, not
+    // per grouping.
+    const workModeAnalytics = computeWorkModeAnalytics(applications);
+    const employmentTypeAnalytics = computeEmploymentTypeAnalytics(
+      applications,
+      historyFacts
+    );
+
     const funnel = computeFunnelAnalytics(applications, historyFacts);
     const overview = computeOverview(
-      deriveOverviewCounts(dashboardMetricsResult.data)
+      deriveOverviewCounts(dashboardMetricsResult.data),
+      {
+        averageOfferTimeDays: computeAverageOfferTimeDays(
+          applications,
+          historyFacts
+        ),
+        averageHiringTimeDays: computeAverageHiringTimeDays(
+          applications,
+          historyFacts
+        ),
+      }
     );
     const insights = computeInsights(
       cvAnalytics,
@@ -114,6 +145,7 @@ export const AnalyticsService = {
       companyAnalytics,
       funnel
     );
+    const trend = computeTrendAnalysis(monthlyAnalytics);
 
     return {
       success: true,
@@ -123,7 +155,10 @@ export const AnalyticsService = {
         cvAnalytics,
         sourceAnalytics,
         monthlyAnalytics,
+        workModeAnalytics,
+        employmentTypeAnalytics,
         funnel,
+        trend,
         insights,
       },
     };

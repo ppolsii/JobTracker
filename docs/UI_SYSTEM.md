@@ -607,6 +607,24 @@ Archive.
 
 ---
 
+# Search Page (Version 2, Phase 27)
+
+Reached from Top Navigation's Search dropdown via a "View all results" link - not a Sidebar item.
+
+Contains
+
+Three sections: Companies, Applications, Notes.
+
+Each section shows its own result count and its own pagination - independent of the other two sections.
+
+No filters, no sorting - the same case-insensitive partial matching Search already performs, just without the dropdown's fixed result cap.
+
+Empty state before any query is entered.
+
+Empty state per section when that section has no matches.
+
+---
+
 # Analytics Page
 
 The most important page of the application.

@@ -2,6 +2,7 @@
 
 import { Pencil, Trash2 } from "lucide-react";
 import { useState, useTransition } from "react";
+import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
 
 import { archiveApplicationNoteAction } from "@/features/applications/actions/application-note.actions";
@@ -61,7 +62,18 @@ export function ApplicationNotesList({
             key={note.id}
             className="flex flex-col gap-2 rounded-lg border p-3"
           >
-            <p className="text-sm whitespace-pre-wrap">{note.content}</p>
+            {/* IMPLEMENTATION_ORDER_V2.md Phase 28: BUSINESS_RULES.md "Notes"
+                says Markdown is supported - content was stored correctly all
+                along but only ever displayed as plain text. ReactMarkdown
+                renders straight to React elements (no dangerouslySetInnerHTML),
+                and does not render embedded raw HTML by default, matching
+                "Rich text is not" supported. Utility classes cover only what
+                Tailwind's Preflight reset otherwise strips from the elements
+                Markdown can produce (list markers/indentation, paragraph
+                spacing, link styling) - no typography plugin needed for this. */}
+            <div className="text-sm [&_a]:text-primary [&_a]:underline [&_li]:ml-5 [&_ol]:list-decimal [&_p+p]:mt-2 [&_ul]:list-disc">
+              <ReactMarkdown>{note.content}</ReactMarkdown>
+            </div>
             <div className="flex items-center justify-between">
               <time
                 dateTime={note.updated_at}

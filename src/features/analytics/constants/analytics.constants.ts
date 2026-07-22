@@ -22,6 +22,10 @@ export const MIN_SAMPLE_INTERVIEW_OFFER_RATE = 5;
 export const MIN_SAMPLE_CV_COMPARISON = 10;
 export const MIN_SAMPLE_COMPANY_COMPARISON = 3;
 
+// IMPLEMENTATION_ORDER_V2.md Phase 29 - ANALYTICS_ENGINE.md "Minimum Data
+// Requirements": "Trend Analysis: Minimum: 2 months."
+export const MIN_SAMPLE_TREND_MONTHS = 2;
+
 // ANALYTICS_ENGINE.md "Empty State Behaviour": "Do not estimate. Display:
 // 'Not enough historical data.'"
 export const INSUFFICIENT_DATA_MESSAGE = "Not enough historical data.";

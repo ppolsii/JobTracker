@@ -228,6 +228,8 @@ Total Applications
 
 ## Acceptance Rate
 
+**Implemented (Version 2, Phase 29).**
+
 Definition
 
 Accepted Offers
@@ -260,6 +262,8 @@ Uses Status History.
 
 ## Average Offer Time
 
+**Implemented (Version 2, Phase 29).**
+
 Definition
 
 Average number of days between:
@@ -273,6 +277,8 @@ Offer
 ---
 
 ## Average Hiring Time
+
+**Implemented (Version 2, Phase 29).**
 
 Definition
 
@@ -432,6 +438,8 @@ Average Response Time
 
 # Work Mode Analytics
 
+**Implemented (Version 2, Phase 29).**
+
 Group applications by
 
 Remote
@@ -453,6 +461,8 @@ Acceptance Rate
 ---
 
 # Employment Type Analytics
+
+**Implemented (Version 2, Phase 29).**
 
 Group applications by
 
@@ -505,6 +515,8 @@ Offer Rate
 ---
 
 # Trend Analysis
+
+**Implemented (Version 2, Phase 29).**
 
 Compare current month against previous month.
 

@@ -81,19 +81,32 @@ export const ApplicationNoteRepository = {
   // the joined column, not a second, parallel ownership mechanism. Archived
   // applications are excluded (`applications.deleted_at`) so a note never
   // surfaces for a job the user no longer considers active.
-  async searchByContent(userId: string, query: string, limit: number) {
+  // IMPLEMENTATION_ORDER_V2.md Phase 27: paginated (page/limit + an exact
+  // count), replacing the previous flat `.limit()` - needed so the
+  // dedicated Search page can render real pagination controls. The
+  // dropdown (SearchService's default page=1) sees identical results to
+  // before this change.
+  async searchByContent(
+    userId: string,
+    query: string,
+    { page, limit }: { page: number; limit: number }
+  ) {
     const supabase = await createClient();
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
     return supabase
       .from("application_notes")
       .select(
-        "id, application_id, content, applications!inner(user_id, position, deleted_at)"
+        "id, application_id, content, applications!inner(user_id, position, deleted_at)",
+        { count: "exact" }
       )
       .eq("applications.user_id", userId)
       .is("applications.deleted_at", null)
       .ilike("content", `%${query}%`)
       .is("deleted_at", null)
       .order("created_at", { ascending: false })
-      .limit(limit)
+      .range(from, to)
       .returns<NoteSearchRow[]>();
   },
 

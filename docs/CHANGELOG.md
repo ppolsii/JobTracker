@@ -976,3 +976,122 @@ Completed the soft-delete lifecycle for Companies, CV Versions, and Applications
 
 - `npm run typecheck`, `npm run lint`, `npm run test` (108 tests, 12 files - 1 new), and `npm run build` all pass.
 - Not verified against a live database in this environment - same persistent limitation as every phase since Phase 4.
+
+---
+
+## Phase 27 — Dedicated Search Results Page (2026-07-21)
+
+Gave Search a full results page beyond the header dropdown's fixed result cap, per `IMPLEMENTATION_ORDER_V2.md`. No new business logic, no new repository - reuses `SearchService`/`CompanyService`/`ApplicationService`/`ApplicationNoteService` entirely.
+
+### Added
+
+- `app/(dashboard)/search/page.tsx` - a Server Component calling `SearchService.search` directly (the same pattern every other list page already uses to call its own Service, never through a Server Action). Three sections (Companies, Applications, Notes), each with its own independent pagination via its own query param (`companiesPage`/`applicationsPage`/`notesPage`) - the three result sets have no natural combined ordering, so one shared pagination cursor across all of them isn't meaningful.
+- `ROUTES.SEARCH` (`/search`) - not added to the Sidebar (`UI_SYSTEM.md`'s Sidebar list is unchanged); reached only via the dropdown's new "View all results" link.
+- `SEARCH_PAGE_LIMIT` (20) in `search.constants.ts` - the page's page size, matching the default every other paginated list page already uses. `SEARCH_RESULT_LIMIT` (5, the dropdown's cap) is unchanged.
+- `searchPageSchema` in `search.schema.ts` - sanitizes the page's searchParams (`query`, `companiesPage`, `applicationsPage`, `notesPage`), mirroring `listCompaniesSchema`'s fallback-instead-of-error approach. Kept separate from `searchSchema` (the dropdown's Server Action input schema) since the input source and shape genuinely differ.
+- `GlobalSearch` gained a "View all results" link at the bottom of the dropdown's results panel, linking to `/search?query=...`.
+
+### Changed (additive - existing dropdown behaviour is unchanged)
+
+- `SearchService.search` gained an optional third `params` argument (`companiesPage`/`applicationsPage`/`notesPage`/`limit`, all optional). The existing call site (`searchAction`, used by the dropdown) passes no third argument, so it defaults to page 1 and `SEARCH_RESULT_LIMIT` for every entity - identical to before this phase.
+- `SearchResults` gained `companiesTotal`/`applicationsTotal`/`notesTotal` (additive fields) so the dedicated page can render `PaginationControls`; `GlobalSearch` ignores them.
+- `ApplicationNoteService.search` now takes a `{page, limit}` object (matching `CompanyService.list`/`ApplicationService.list`'s existing convention) instead of a flat `limit`, and returns `{notes, total}` instead of a bare array - needed for Notes to be paginated at all. Verified via `grep` that `SearchService` is this method's only caller, so this change is fully contained within the Search feature's dependency chain.
+- `ApplicationNoteRepository.searchByContent` now takes `{page, limit}` and uses `.range()` with an exact count instead of a flat `.limit()` - the underlying data-access change `ApplicationNoteService.search` required. Same containment: its only caller is `ApplicationNoteService.search`.
+
+### Documentation updated
+
+- `UI_SYSTEM.md` - new "Search Page" section, matching the pattern already used for Dashboard/Analytics/Applications/Companies/CV Versions.
+- `API.md` - "Search" section documents the three new pagination parameters.
+- `KNOWN_ISSUES.md` - the Phase 13 "No dedicated Search results page" entry marked resolved.
+
+### Verification
+
+- `npm run typecheck`, `npm run lint`, `npm run test` (110 tests, 12 files - 2 new, both in the updated `search.service.test.ts`), and `npm run build` all pass. The build correctly collects `/search` as a route.
+- Not verified against a live database in this environment - same persistent limitation as every phase since Phase 4.
+
+---
+
+## Phase 28 — Markdown Rendering for Notes (2026-07-21)
+
+Closed the gap between `BUSINESS_RULES.md`'s stated "Markdown supported" and the actual display (plain text, `whitespace-pre-wrap`), per `IMPLEMENTATION_ORDER_V2.md`. No database change - `application_notes.content` was already stored as raw Markdown text; only how it renders changed.
+
+### Phase numbering note
+
+This session's instructions initially described "Phase 28" as Interview Feedback, which conflicts with this document's own Phase 28 ("Markdown Rendering for Notes") - Interview Feedback is documented here as Phase 30. Raised to the user before writing any code, per `IMPLEMENTATION_RULES.md`'s "if documentation is ambiguous, stop and ask - never guess." The user confirmed: implement this document's actual Phase 28 (Markdown Rendering for Notes) as originally sequenced; Interview Feedback remains Phase 30, unimplemented.
+
+### Technical decisions
+
+- **Dependency**: `react-markdown` (v10.1.0) - approved before installation per `IMPLEMENTATION_RULES.md`. Renders straight to React elements rather than `dangerouslySetInnerHTML`, so no separate sanitizer is needed, and it does not render embedded raw HTML by default - matching `BUSINESS_RULES.md` "Notes": "Rich text is not" supported. No additional plugins (e.g. `remark-gfm`) were added - notes are simple free text, and CommonMark (bold/italic/lists/links) is sufficient without an established requirement for GitHub-flavoured extras.
+- `npm audit` reported 7 vulnerabilities after installation (4 moderate, 3 high). Traced each via `npm ls`: all are pre-existing, transitive dependencies of `shadcn`/`next` (`fast-uri`/`@hono/node-server`/`@modelcontextprotocol/sdk` via `shadcn`; `postcss`/`sharp` via `next`, the same pre-existing advisory already noted in this file's Phase 1 entry) - `react-markdown` itself introduces none. No action taken, consistent with Phase 1's precedent (the only fixes require a Next.js/shadcn downgrade).
+- No typography plugin (e.g. `@tailwindcss/typography`) was added - a second new dependency for this alone would have been disproportionate. A small, explicit set of Tailwind utility classes on the rendering container covers what Preflight's reset otherwise strips from Markdown's output (list markers/indentation, paragraph spacing, link styling).
+
+### Changed
+
+- `ApplicationNotesList.tsx` - `note.content` now renders via `<ReactMarkdown>` instead of a plain `<p className="whitespace-pre-wrap">`. The only file changed; no Repository, Service, Server Action, or schema was touched - this was purely a display-layer change, since content was already stored correctly.
+
+### Documentation updated
+
+- `KNOWN_ISSUES.md` - the Phase 10 "No markdown rendering" entry marked resolved.
+
+### Verification
+
+- `npm run typecheck`, `npm run lint`, `npm run test` (110 tests, 12 files, unchanged - no existing test covers this component's rendering), and `npm run build` all pass.
+- Not verified against a live database in this environment - same persistent limitation as every phase since Phase 4. The rendering itself was verified by code review (no dependency on live data), not by viewing it in a browser against real notes.
+
+---
+
+## Phase 29 — Analytics Completion (2026-07-22)
+
+Implemented the five metrics `ANALYTICS_ENGINE.md`/`FEATURES.md` documented but Phase 12 never built, per `IMPLEMENTATION_ORDER_V2.md`: Acceptance Rate (top-level), Average Offer Time, Average Hiring Time, Work Mode Analytics, Employment Type Analytics, and Trend Analysis. No database change - all five reuse the existing bulk applications/history fetch and/or Phase 21's `dashboard_metrics`/`monthly_statistics` views; no new view was added. No changes to Billing, Search, Restore/Archive, Markdown Notes, or Dashboard.
+
+### Added
+
+- `AnalyticsOverview.acceptanceRate` (`RateMetric`) - Accepted Offers / Offers, sourced from the existing `dashboard_metrics` view row (`deriveOverviewCounts` now also derives `accepted`). Gated only on having at least one offer (no minimum sample size is documented for this metric, unlike Interview/Offer Rate's 5-application threshold), since its denominator is Offers, not Total Applications.
+- `AnalyticsOverview.averageOfferTimeDays` / `averageHiringTimeDays` - "Application Date -> Offer"/"-> Accepted", averaged across the whole account (not per Company/CV/Source/Monthly grouping, which already has its own Average Response Time column). `ApplicationHistoryFacts` gained `offerEnteredAt`/`acceptedEnteredAt`, populated in `buildHistoryFactsByApplication` the same way `respondedAt` already was - each set at most once per application, since Offer's only outgoing transitions are to Accepted/Rejected and Accepted is terminal. `computeAverageResponseTimeDays` was refactored into a shared `computeAverageDaysBetween` helper, reused by the two new `computeAverageOfferTimeDays`/`computeAverageHiringTimeDays` functions, so the "Application Date -> event" averaging logic exists in exactly one place.
+- `AnalyticsSummary.workModeAnalytics` (`WorkModeAnalyticsRow[]`) and `.employmentTypeAnalytics` (`EmploymentTypeAnalyticsRow[]`) - grouped by `work_mode`/`employment_type` from the same bulk `listAllForAnalytics` fetch Source Analytics already groups in application code, since neither `DATABASE.md` view name is reserved (`work_mode_statistics`/`employment_type_statistics`). Each has its own, smaller column set matching exactly what `ANALYTICS_ENGINE.md` documents for that grouping (Work Mode: Applications/Interview Rate/Offer Rate/Acceptance Rate; Employment Type: Applications/Responses/Offers/Average Response Time) rather than reusing the broader `GroupAnalyticsRow` shape. `AnalyticsApplicationRow` and `ApplicationRepository.listAllForAnalytics`'s select list gained `work_mode`/`employment_type` (both columns already existed on `applications`; no migration needed).
+- `AnalyticsSummary.trend` (`TrendAnalysis | null`) - "current month vs. previous month" Application/Interview/Offer/Response Growth percentages, derived from the already-computed `monthlyAnalytics` (the last two entries in its ascending-sorted array) rather than a new data source - "Do not duplicate analytics calculations in multiple places". `null` below the documented 2-month minimum (`MIN_SAMPLE_TREND_MONTHS`); an individual growth figure is `null` when its previous-month count was zero (avoids a division by zero, not itself a documented threshold).
+- UI: `AnalyticsRateCards` gained a fourth "Acceptance Rate" card. New components `AnalyticsTimeMetrics` (Average Offer/Hiring Time cards), `WorkModeAnalyticsTable`, `EmploymentTypeAnalyticsTable` (each a `DataTable` with its own column set, mirroring `AnalyticsComparisonTable`'s structure but not its shape), and `TrendAnalysisCard`. All wired into `analytics/page.tsx` as new sections; none define a metric of their own - every number rendered was already computed by `AnalyticsService`.
+
+### Documentation updated
+
+- `ANALYTICS_ENGINE.md` - each of the six newly-implemented sections (Acceptance Rate, Average Offer Time, Average Hiring Time, Work Mode Analytics, Employment Type Analytics, Trend Analysis) marked "Implemented (Version 2, Phase 29)".
+- `KNOWN_ISSUES.md` - the Phase 12 "Several ANALYTICS_ENGINE.md / FEATURES.md metrics are intentionally not implemented" entry marked resolved.
+
+### Verification
+
+- `npm run typecheck`, `npm run lint`, `npm run test` (121 tests, 12 files - 11 new, covering `computeAverageOfferTimeDays`/`computeAverageHiringTimeDays`, `computeWorkModeAnalytics`, `computeEmploymentTypeAnalytics`, `computeTrendAnalysis`, and `computeOverview`'s new Acceptance Rate/time-metrics behavior), and `npm run build` all pass.
+- Not verified against a live database in this environment - same persistent limitation as every phase since Phase 4. Every new formula was verified by code review and by tracing it against `ANALYTICS_ENGINE.md`'s definitions, and by unit tests against synthetic status-history data, not by exercising it against real historical application data.
+
+---
+
+## Phase 30 — Interview Feedback (2026-07-22)
+
+Let users attach structured feedback to a specific Status History entry, per `IMPLEMENTATION_ORDER_V2.md`. This is Version 2's final phase. New `interview_feedback` table and a new `src/features/interview-feedback` feature; no changes to Billing, Search, Restore/Archive, Markdown Notes, Analytics, or Dashboard.
+
+### Planning decisions (approved before writing code)
+
+- **Rating scale**: no document defined one - approved as a 1-5 integer scale, enforced by a database check constraint and a Zod bound. Nullable: a user may leave notes without rating.
+- **Format field**: no document defined its values - approved as a new `interview_format` enum (Phone, Video, On-site, Technical, Behavioral) describing how the interview itself was conducted, independent of the application's own `work_mode`.
+- Both were raised via clarifying questions before any code was written, per `IMPLEMENTATION_RULES.md`'s "if documentation is incomplete, stop and ask - never guess."
+
+### Added
+
+- Migration `20260722090000_interview_feedback.sql`: `interview_format` enum; `interview_feedback` table (`application_status_history_id` FK, `user_id`, `rating`, `format`, `notes` (required, mirrors `application_notes.content`), timestamps, `deleted_at`). Unlike `application_notes`, this table has its own `user_id` column (the same shape `applications`/`companies`/`cv_versions` already use) - RLS's insert/update policies additionally require the referenced `application_status_history` row to belong to an application owned by that same user, so ownership is both declared (`user_id`) and inherited (through Status History), matching this phase's own documentation requirement.
+- New feature `src/features/interview-feedback/{types,constants,schemas,repositories,services,actions,components}`: `InterviewFeedbackRepository` (data-access only, filters every query by `user_id` directly - the same pattern `ApplicationRepository`/`CompanyRepository` already use, not the "resolve ownership through a join" pattern `application_notes` needs); `InterviewFeedbackService` (`listForApplication`/`create`/`update`/`archive`) - `create` verifies the target `application_status_history_id` actually belongs to the given application by calling `ApplicationStatusService.listHistory` (which already re-verifies the application itself is owned by this user) and checking the id is present in the result, reusing Applications' own Service rather than adding a new Repository method or duplicating ownership logic; Server Actions mirroring `application-note.actions.ts`'s shape exactly.
+- UI: `InterviewFeedbackForm`/`InterviewFeedbackFormDialog` (mirror `ApplicationNoteForm`/`ApplicationNoteFormDialog`) and `InterviewFeedbackPanel` (mirrors `ApplicationNotesList`'s edit/archive-with-confirm pattern, applied per Status History entry instead of per application - any number of feedback entries may exist per stage). `ApplicationStatusTimeline` gained a `renderFeedback(historyId)` render-prop slot instead of importing Interview Feedback directly - the same prop-injection pattern `TopNav` already uses for `search`/`exportMenu`, so the Applications feature stays decoupled from the new one. The Application Detail page fetches feedback via `InterviewFeedbackService.listForApplication`, groups it by `application_status_history_id`, and supplies `renderFeedback` to the timeline - the only Applications-feature file touched, matching this phase's own "Application Detail page" file-list entry.
+
+### Documentation updated
+
+- `DATABASE.md` - new "interview_feedback" table section (Version 2 Tables) and `interview_format` enum.
+- `BUSINESS_RULES.md` - new "Interview Feedback" section: ownership inherited through Status History, append/edit rules (any number of entries per stage, editable/archivable by their owner, Status History itself remains untouched).
+- `API.md` - new "Interview Feedback" endpoints section; removed from "Future Endpoints".
+- `FEATURES.md` - new "Feature 14 - Interview Feedback (Version 2, Phase 30)"; removed from "Future Features".
+
+### Verification
+
+- `npm run typecheck`, `npm run lint`, `npm run test` (131 tests, 13 files - 10 new, covering `InterviewFeedbackService`'s ownership checks, defaults, and not-found paths), and `npm run build` all pass.
+- Not verified against a live database in this environment - same persistent limitation as every phase since Phase 4.
+
+### Version 2 complete
+
+Phase 30 was the last phase in `IMPLEMENTATION_ORDER_V2.md`. Every phase from 19 through 30 has been implemented, reviewed, and documented.

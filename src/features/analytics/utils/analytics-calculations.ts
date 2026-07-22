@@ -3,6 +3,7 @@ import {
   MIN_SAMPLE_COMPANY_COMPARISON,
   MIN_SAMPLE_CV_COMPARISON,
   MIN_SAMPLE_INTERVIEW_OFFER_RATE,
+  MIN_SAMPLE_TREND_MONTHS,
 } from "@/features/analytics/constants/analytics.constants";
 import type {
   GroupStatisticsRow,
@@ -10,9 +11,12 @@ import type {
 } from "@/features/analytics/repositories/analytics.repository";
 import type {
   AnalyticsOverview,
+  EmploymentTypeAnalyticsRow,
   FunnelStageRow,
   GroupAnalyticsRow,
   RateMetric,
+  TrendAnalysis,
+  WorkModeAnalyticsRow,
 } from "@/features/analytics/types/analytics.types";
 import {
   INTERVIEW_STAGE_STATUSES,
@@ -23,6 +27,8 @@ import type {
   AnalyticsApplicationRow,
   ApplicationStatus,
   ApplicationStatusHistoryEntry,
+  EmploymentType,
+  WorkMode,
 } from "@/features/applications/types/application.types";
 
 // Pure calculation helpers for AnalyticsService (Phase 12) - no Supabase
@@ -34,6 +40,14 @@ import type {
 
 export interface ApplicationHistoryFacts {
   respondedAt: string | null;
+  // IMPLEMENTATION_ORDER_V2.md Phase 29 - ANALYTICS_ENGINE.md "Average Offer
+  // Time"/"Average Hiring Time": the timestamp an application first entered
+  // Offer/Accepted. Each is set at most once per application - Offer's only
+  // outgoing transitions are to Accepted or Rejected, and Accepted is
+  // terminal (APPLICATION_STATUS_TRANSITIONS has no path back into either),
+  // so a single recorded timestamp is exact, not just the "most recent" one.
+  offerEnteredAt: string | null;
+  acceptedEnteredAt: string | null;
   enteredStatuses: Set<ApplicationStatus>;
   rejectedFromStage: ApplicationStatus | null;
 }
@@ -49,6 +63,8 @@ export function buildHistoryFactsByApplication(
   for (const entry of history) {
     const current = facts.get(entry.application_id) ?? {
       respondedAt: null,
+      offerEnteredAt: null,
+      acceptedEnteredAt: null,
       enteredStatuses: new Set<ApplicationStatus>(),
       rejectedFromStage: null,
     };
@@ -61,6 +77,14 @@ export function buildHistoryFactsByApplication(
     // application (APPLICATION_STATUS_TRANSITIONS never re-enters Applied).
     if (entry.previous_status === "Applied") {
       current.respondedAt = entry.changed_at;
+    }
+
+    if (entry.new_status === "Offer") {
+      current.offerEnteredAt = entry.changed_at;
+    }
+
+    if (entry.new_status === "Accepted") {
+      current.acceptedEnteredAt = entry.changed_at;
     }
 
     if (entry.new_status === "Rejected" && entry.previous_status !== null) {
@@ -89,22 +113,52 @@ function toRate(numerator: number, denominator: number): number | null {
   return roundTo((numerator / denominator) * 100, 1);
 }
 
-function computeAverageResponseTimeDays(
+// Generic "Application Date -> some later event" average, shared by Average
+// Response/Offer/Hiring Time (ANALYTICS_ENGINE.md "Time Metrics") - the three
+// differ only in which `ApplicationHistoryFacts` timestamp they read.
+function computeAverageDaysBetween(
   apps: AnalyticsApplicationRow[],
-  historyFacts: Map<string, ApplicationHistoryFacts>
+  historyFacts: Map<string, ApplicationHistoryFacts>,
+  eventAtOf: (facts: ApplicationHistoryFacts) => string | null
 ): number | null {
   const samples: number[] = [];
 
   for (const app of apps) {
     if (!app.application_date) continue;
-    const respondedAt = historyFacts.get(app.id)?.respondedAt;
-    if (!respondedAt) continue;
-    samples.push(daysBetween(app.application_date, respondedAt));
+    const facts = historyFacts.get(app.id);
+    const eventAt = facts && eventAtOf(facts);
+    if (!eventAt) continue;
+    samples.push(daysBetween(app.application_date, eventAt));
   }
 
   if (samples.length === 0) return null;
   const average = samples.reduce((sum, days) => sum + days, 0) / samples.length;
   return roundTo(average, 1);
+}
+
+function computeAverageResponseTimeDays(
+  apps: AnalyticsApplicationRow[],
+  historyFacts: Map<string, ApplicationHistoryFacts>
+): number | null {
+  return computeAverageDaysBetween(apps, historyFacts, (facts) => facts.respondedAt);
+}
+
+// ANALYTICS_ENGINE.md "Average Offer Time"/"Average Hiring Time": computed
+// globally across the whole account (unlike Average Response Time, which is
+// also produced per Company/CV/Source/Monthly grouping) - see
+// AnalyticsService for where these are called.
+export function computeAverageOfferTimeDays(
+  apps: AnalyticsApplicationRow[],
+  historyFacts: Map<string, ApplicationHistoryFacts>
+): number | null {
+  return computeAverageDaysBetween(apps, historyFacts, (facts) => facts.offerEnteredAt);
+}
+
+export function computeAverageHiringTimeDays(
+  apps: AnalyticsApplicationRow[],
+  historyFacts: Map<string, ApplicationHistoryFacts>
+): number | null {
+  return computeAverageDaysBetween(apps, historyFacts, (facts) => facts.acceptedEnteredAt);
 }
 
 // Shared by Company/CV/Source/Monthly Analytics (ANALYTICS_ENGINE.md defines
@@ -259,16 +313,148 @@ export function deriveOverviewCounts(row: StatusCountColumns | null): {
   total: number;
   interviews: number;
   offers: number;
+  accepted: number;
   responded: number;
 } {
   if (!row) {
-    return { total: 0, interviews: 0, offers: 0, responded: 0 };
+    return { total: 0, interviews: 0, offers: 0, accepted: 0, responded: 0 };
   }
   return {
     total: row.total_count,
     interviews: sumStatusCounts(row, INTERVIEW_STAGE_STATUSES),
     offers: sumStatusCounts(row, OFFER_STAGE_STATUSES),
+    accepted: row.accepted_count,
     responded: row.total_count - sumStatusCounts(row, UNRESPONDED_STATUSES),
+  };
+}
+
+// ANALYTICS_ENGINE.md "Work Mode Analytics": "Group applications by: Remote,
+// Hybrid, On Site. Calculate: Applications, Interview Rate, Offer Rate,
+// Acceptance Rate." No `work_mode_statistics` view exists (DATABASE.md
+// reserves no such name), so - exactly like Source Analytics - this groups
+// the same bulk analytics fetch in application code. Applications with no
+// recorded work mode are excluded, the same treatment Source Analytics gives
+// applications with no recorded source.
+export function computeWorkModeAnalytics(
+  apps: AnalyticsApplicationRow[]
+): WorkModeAnalyticsRow[] {
+  const groups = new Map<WorkMode, AnalyticsApplicationRow[]>();
+  for (const app of apps) {
+    if (!app.work_mode) continue;
+    const group = groups.get(app.work_mode) ?? [];
+    group.push(app);
+    groups.set(app.work_mode, group);
+  }
+
+  const rows: WorkModeAnalyticsRow[] = [];
+  for (const [workMode, groupApps] of groups) {
+    const total = groupApps.length;
+    const interviews = groupApps.filter((app) =>
+      INTERVIEW_STAGE_STATUSES.includes(app.current_status)
+    ).length;
+    const offers = groupApps.filter((app) =>
+      OFFER_STAGE_STATUSES.includes(app.current_status)
+    ).length;
+    const accepted = groupApps.filter(
+      (app) => app.current_status === "Accepted"
+    ).length;
+
+    rows.push({
+      id: workMode,
+      name: workMode,
+      applications: total,
+      interviewRate: toRate(interviews, total),
+      offerRate: toRate(offers, total),
+      // Same "Offers" denominator as the top-level Acceptance Rate, not Total
+      // Applications.
+      acceptanceRate: toRate(accepted, offers),
+    });
+  }
+
+  return rows;
+}
+
+// ANALYTICS_ENGINE.md "Employment Type Analytics": "Group applications by:
+// Full Time, Part Time, Internship, Contract, Freelance. Calculate:
+// Applications, Responses, Offers, Average Response Time." Same "no matching
+// SQL view, group the bulk fetch in application code" treatment as Work Mode
+// Analytics above.
+export function computeEmploymentTypeAnalytics(
+  apps: AnalyticsApplicationRow[],
+  historyFacts: Map<string, ApplicationHistoryFacts>
+): EmploymentTypeAnalyticsRow[] {
+  const groups = new Map<EmploymentType, AnalyticsApplicationRow[]>();
+  for (const app of apps) {
+    if (!app.employment_type) continue;
+    const group = groups.get(app.employment_type) ?? [];
+    group.push(app);
+    groups.set(app.employment_type, group);
+  }
+
+  const rows: EmploymentTypeAnalyticsRow[] = [];
+  for (const [employmentType, groupApps] of groups) {
+    const total = groupApps.length;
+    const responses = groupApps.filter(
+      (app) => !UNRESPONDED_STATUSES.includes(app.current_status)
+    ).length;
+    const offers = groupApps.filter((app) =>
+      OFFER_STAGE_STATUSES.includes(app.current_status)
+    ).length;
+
+    rows.push({
+      id: employmentType,
+      name: employmentType,
+      applications: total,
+      responses,
+      offers,
+      averageResponseTimeDays: computeAverageResponseTimeDays(
+        groupApps,
+        historyFacts
+      ),
+    });
+  }
+
+  return rows;
+}
+
+function computeGrowthPercent(current: number, previous: number): number | null {
+  if (previous === 0) return null;
+  return roundTo(((current - previous) / previous) * 100, 1);
+}
+
+// ANALYTICS_ENGINE.md "Trend Analysis": "Compare current month against
+// previous month... Represent changes as percentages." Reuses
+// `monthlyAnalytics` (already computed via the `monthly_statistics` view)
+// rather than re-deriving month-by-month counts - "Do not duplicate
+// analytics calculations in multiple places". `monthlyRows` must already be
+// sorted ascending by month (AnalyticsService sorts `monthlyAnalytics` this
+// way already); "current"/"previous" are simply the last two entries present
+// - months with zero applications never appear as rows (the view only
+// emits a row per month that has data), so a gap month is not invented.
+export function computeTrendAnalysis(
+  monthlyRows: GroupAnalyticsRow[]
+): TrendAnalysis | null {
+  if (monthlyRows.length < MIN_SAMPLE_TREND_MONTHS) return null;
+
+  const previous = monthlyRows[monthlyRows.length - 2];
+  const current = monthlyRows[monthlyRows.length - 1];
+
+  return {
+    currentMonth: current.id,
+    previousMonth: previous.id,
+    applicationGrowth: computeGrowthPercent(
+      current.applications,
+      previous.applications
+    ),
+    interviewGrowth: computeGrowthPercent(
+      current.interviews,
+      previous.interviews
+    ),
+    offerGrowth: computeGrowthPercent(current.offers, previous.offers),
+    responseGrowth: computeGrowthPercent(
+      current.responses,
+      previous.responses
+    ),
   };
 }
 
@@ -311,19 +497,27 @@ export function computeFunnelAnalytics(
   });
 }
 
-export function computeOverview(counts: {
-  total: number;
-  interviews: number;
-  offers: number;
-  responded: number;
-}): AnalyticsOverview {
+export function computeOverview(
+  counts: {
+    total: number;
+    interviews: number;
+    offers: number;
+    accepted: number;
+    responded: number;
+  },
+  timeMetrics: { averageOfferTimeDays: number | null; averageHiringTimeDays: number | null }
+): AnalyticsOverview {
   const meetsInterviewOfferMinimum =
     counts.total >= MIN_SAMPLE_INTERVIEW_OFFER_RATE;
 
-  function metric(numerator: number, meetsMinimum: boolean): RateMetric {
+  function metric(
+    numerator: number,
+    denominator: number,
+    meetsMinimum: boolean
+  ): RateMetric {
     return {
-      value: meetsMinimum ? toRate(numerator, counts.total) : null,
-      sampleSize: counts.total,
+      value: meetsMinimum ? toRate(numerator, denominator) : null,
+      sampleSize: denominator,
       meetsMinimum,
     };
   }
@@ -332,9 +526,16 @@ export function computeOverview(counts: {
     // ANALYTICS_ENGINE.md's "Minimum Data Requirements" names no threshold
     // for Response Rate specifically - only guards the trivial "no
     // applications at all" case.
-    responseRate: metric(counts.responded, counts.total > 0),
-    interviewRate: metric(counts.interviews, meetsInterviewOfferMinimum),
-    offerRate: metric(counts.offers, meetsInterviewOfferMinimum),
+    responseRate: metric(counts.responded, counts.total, counts.total > 0),
+    interviewRate: metric(counts.interviews, counts.total, meetsInterviewOfferMinimum),
+    offerRate: metric(counts.offers, counts.total, meetsInterviewOfferMinimum),
+    // ANALYTICS_ENGINE.md "Acceptance Rate": "Accepted Offers / Offers" - the
+    // denominator is Offers, not Total Applications, unlike the three rates
+    // above. No minimum sample size is documented for it, so it's only
+    // guarded against the trivial "no offers yet" divide-by-zero case.
+    acceptanceRate: metric(counts.accepted, counts.offers, counts.offers > 0),
+    averageOfferTimeDays: timeMetrics.averageOfferTimeDays,
+    averageHiringTimeDays: timeMetrics.averageHiringTimeDays,
   };
 }
 

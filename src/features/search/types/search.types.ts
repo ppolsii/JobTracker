@@ -22,6 +22,12 @@ export interface NoteSearchResult {
 
 export interface SearchResults {
   companies: CompanySearchResult[];
+  // IMPLEMENTATION_ORDER_V2.md Phase 27: totals, additive to the existing
+  // array fields above - GlobalSearch's dropdown ignores them; the
+  // dedicated Search page uses them to render PaginationControls.
+  companiesTotal: number;
   applications: ApplicationSearchResult[];
+  applicationsTotal: number;
   notes: NoteSearchResult[];
+  notesTotal: number;
 }

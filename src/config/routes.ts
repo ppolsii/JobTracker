@@ -12,6 +12,10 @@ export const ROUTES = {
   CV_VERSIONS: "/cv-versions",
   ANALYTICS: "/analytics",
   SETTINGS: "/settings",
+  // IMPLEMENTATION_ORDER_V2.md Phase 27: the dedicated Search results page,
+  // reached from GlobalSearch's "view all results" link - not a sidebar
+  // item (UI_SYSTEM.md's Sidebar list is unchanged).
+  SEARCH: "/search",
 } as const;
 
 // First dynamic route in the app (Phase 9's Application Detail page) - a

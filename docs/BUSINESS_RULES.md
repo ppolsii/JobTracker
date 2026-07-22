@@ -359,6 +359,29 @@ Rich text is not.
 
 ---
 
+# Interview Feedback (Version 2, Phase 30)
+
+Users may attach structured feedback to a specific Status History entry (a single interview stage), not to the application as a whole.
+
+Ownership is inherited through Status History: feedback belongs to a status-history row, which belongs to an application, which belongs to a user. A feedback entry may only be created against a status-history entry that already belongs to an application owned by the acting user.
+
+Fields
+
+- Rating: optional, 1-5.
+- Format: optional, one of Phone, Video, On-site, Technical, Behavioral.
+- Notes: required free text. Markdown is supported, Rich text is not - same rule as application Notes.
+
+Append/Edit rules
+
+- Any number of feedback entries may be appended to the same Status History entry (e.g. more than one interviewer's feedback for the same stage) - not limited to one per stage.
+- A feedback entry may be edited or archived by its owner at any time. Editing or archiving feedback never modifies Status History itself, which remains append-only and immutable.
+
+Soft deletes
+
+Interview Feedback follows the same soft-delete rule as every other business entity: archiving sets `deleted_at`, never a hard delete.
+
+---
+
 # Soft Deletes
 
 No business entity should be physically deleted.

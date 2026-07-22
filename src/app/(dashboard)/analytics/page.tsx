@@ -4,8 +4,12 @@ import { redirect } from "next/navigation";
 import { ROUTES } from "@/config/routes";
 import { AnalyticsComparisonTable } from "@/features/analytics/components/AnalyticsComparisonTable";
 import { AnalyticsRateCards } from "@/features/analytics/components/AnalyticsRateCards";
+import { AnalyticsTimeMetrics } from "@/features/analytics/components/AnalyticsTimeMetrics";
+import { EmploymentTypeAnalyticsTable } from "@/features/analytics/components/EmploymentTypeAnalyticsTable";
 import { FunnelChart } from "@/features/analytics/components/FunnelChart";
 import { InsightsList } from "@/features/analytics/components/InsightsList";
+import { TrendAnalysisCard } from "@/features/analytics/components/TrendAnalysisCard";
+import { WorkModeAnalyticsTable } from "@/features/analytics/components/WorkModeAnalyticsTable";
 import { AnalyticsService } from "@/features/analytics/services/analytics.service";
 import { AuthService } from "@/features/auth/services/auth.service";
 import {
@@ -18,7 +22,9 @@ import {
 export const metadata: Metadata = { title: "Analytics" };
 
 // IMPLEMENTATION_ORDER.md Phase 12: Response/Interview/Offer Rate, Monthly/
-// Company/CV/Source Analytics, Funnel Analytics, Insights. This page only
+// Company/CV/Source Analytics, Funnel Analytics, Insights.
+// IMPLEMENTATION_ORDER_V2.md Phase 29: Acceptance Rate, Average Offer/Hiring
+// Time, Work Mode/Employment Type Analytics, Trend Analysis. This page only
 // composes AnalyticsService's output (UI_SYSTEM.md "Analytics Page": the
 // page must "communicate value immediately" - it defines no metric of its
 // own, per this phase's "Charts never define business rules").
@@ -39,7 +45,10 @@ export default async function AnalyticsPage() {
     cvAnalytics,
     sourceAnalytics,
     monthlyAnalytics,
+    workModeAnalytics,
+    employmentTypeAnalytics,
     funnel,
+    trend,
     insights,
   } = result.data;
 
@@ -49,12 +58,26 @@ export default async function AnalyticsPage() {
 
       <AnalyticsRateCards overview={overview} />
 
+      <AnalyticsTimeMetrics
+        averageOfferTimeDays={overview.averageOfferTimeDays}
+        averageHiringTimeDays={overview.averageHiringTimeDays}
+      />
+
       <Card>
         <CardHeader>
           <CardTitle>Insights</CardTitle>
         </CardHeader>
         <CardContent>
           <InsightsList insights={insights} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Trend Analysis</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <TrendAnalysisCard trend={trend} />
         </CardContent>
       </Card>
 
@@ -120,6 +143,24 @@ export default async function AnalyticsPage() {
             emptyTitle="No source data yet"
             emptyDescription="Record where your applications came from to see a breakdown here."
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Work Mode Analytics</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <WorkModeAnalyticsTable rows={workModeAnalytics} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Employment Type Analytics</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <EmploymentTypeAnalyticsTable rows={employmentTypeAnalytics} />
         </CardContent>
       </Card>
     </div>

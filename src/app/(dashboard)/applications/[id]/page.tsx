@@ -13,6 +13,9 @@ import { ApplicationNoteService } from "@/features/applications/services/applica
 import { ApplicationPickerService } from "@/features/applications/services/application-picker.service";
 import { ApplicationStatusService } from "@/features/applications/services/application-status.service";
 import { ApplicationService } from "@/features/applications/services/application.service";
+import { InterviewFeedbackPanel } from "@/features/interview-feedback/components/InterviewFeedbackPanel";
+import type { InterviewFeedback } from "@/features/interview-feedback/types/interview-feedback.types";
+import { InterviewFeedbackService } from "@/features/interview-feedback/services/interview-feedback.service";
 import { Button } from "@/shared/components/ui/button";
 import {
   Card,
@@ -44,13 +47,19 @@ export default async function ApplicationDetailPage({
 
   const { id } = await params;
 
-  const [applicationResult, historyResult, notesResult, pickerOptions] =
-    await Promise.all([
-      ApplicationService.getById(user.id, id),
-      ApplicationStatusService.listHistory(user.id, id),
-      ApplicationNoteService.list(user.id, id),
-      ApplicationPickerService.getOptions(user.id),
-    ]);
+  const [
+    applicationResult,
+    historyResult,
+    notesResult,
+    feedbackResult,
+    pickerOptions,
+  ] = await Promise.all([
+    ApplicationService.getById(user.id, id),
+    ApplicationStatusService.listHistory(user.id, id),
+    ApplicationNoteService.list(user.id, id),
+    InterviewFeedbackService.listForApplication(user.id, id),
+    ApplicationPickerService.getOptions(user.id),
+  ]);
 
   if (!applicationResult.success) {
     notFound();
@@ -60,6 +69,23 @@ export default async function ApplicationDetailPage({
   const history = historyResult.success ? historyResult.data : [];
   const notes = notesResult.success ? notesResult.data : [];
   const { companies, cvVersions } = pickerOptions;
+
+  // IMPLEMENTATION_ORDER_V2.md Phase 30: grouped once here (one bulk fetch
+  // above, not one query per row) and looked up per Status History row via
+  // ApplicationStatusTimeline's renderFeedback slot.
+  const feedbackByHistoryId = new Map<string, InterviewFeedback[]>();
+  if (feedbackResult.success) {
+    for (const entry of feedbackResult.data) {
+      const existing = feedbackByHistoryId.get(
+        entry.application_status_history_id
+      );
+      if (existing) {
+        existing.push(entry);
+      } else {
+        feedbackByHistoryId.set(entry.application_status_history_id, [entry]);
+      }
+    }
+  }
 
   const hasSalary =
     application.salary_min != null || application.salary_max != null;
@@ -161,7 +187,16 @@ export default async function ApplicationDetailPage({
           <CardTitle>Status Timeline</CardTitle>
         </CardHeader>
         <CardContent>
-          <ApplicationStatusTimeline entries={history} />
+          <ApplicationStatusTimeline
+            entries={history}
+            renderFeedback={(historyId) => (
+              <InterviewFeedbackPanel
+                applicationId={application.id}
+                applicationStatusHistoryId={historyId}
+                feedback={feedbackByHistoryId.get(historyId) ?? []}
+              />
+            )}
+          />
         </CardContent>
       </Card>
 

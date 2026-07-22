@@ -435,6 +435,63 @@ Soft delete.
 
 ---
 
+# Interview Feedback
+
+Version 2, Phase 30. Attaches structured feedback to a specific Status History entry, not to the application as a whole.
+
+## Create Feedback
+
+POST
+
+/status-history/:id/feedback
+
+Creates a feedback entry for the given Status History entry.
+
+Required
+
+- notes
+
+Optional
+
+- rating (1-5)
+- format (Phone, Video, On-site, Technical, Behavioral)
+
+Rejected if the Status History entry does not belong to an application owned by the authenticated user.
+
+Returns the created feedback object.
+
+---
+
+## Get Feedback
+
+GET
+
+/applications/:id/feedback
+
+Returns every feedback entry across all of the application's Status History entries.
+
+---
+
+## Update Feedback
+
+PATCH
+
+/feedback/:id
+
+Updates rating, format, and/or notes.
+
+---
+
+## Delete Feedback
+
+DELETE
+
+/feedback/:id
+
+Soft delete.
+
+---
+
 # Dashboard
 
 ## Dashboard Summary
@@ -578,6 +635,8 @@ Notes
 Supports partial matching.
 
 Case insensitive.
+
+Version 2, Phase 27: supports pagination via `companiesPage`, `applicationsPage`, and `notesPage` - one independent page number per entity, since the three result sets have no natural combined ordering. Defaults to page 1 for each. Backs the dedicated Search page in addition to the Top Navigation dropdown, which continues to request a fixed, small result count per entity (unchanged).
 
 ---
 
@@ -726,8 +785,6 @@ Every endpoint must respect Row Level Security.
 # Future Endpoints
 
 Reserved for future versions
-
-Interview Feedback
 
 Browser Extension
 

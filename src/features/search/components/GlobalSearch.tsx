@@ -13,8 +13,11 @@ const DEBOUNCE_MS = 300;
 
 const EMPTY_RESULTS: SearchResults = {
   companies: [],
+  companiesTotal: 0,
   applications: [],
+  applicationsTotal: 0,
   notes: [],
+  notesTotal: 0,
 };
 
 function totalResults(results: SearchResults): number {
@@ -183,6 +186,14 @@ export function GlobalSearch() {
                   </ul>
                 </section>
               ) : null}
+
+              <Link
+                href={`${ROUTES.SEARCH}?query=${encodeURIComponent(query)}`}
+                onClick={closeAndReset}
+                className="block rounded-md px-2 py-1.5 text-center text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              >
+                View all results for &quot;{query}&quot;
+              </Link>
             </div>
           )}
         </div>

@@ -6,11 +6,16 @@ import type {
 } from "@/features/analytics/repositories/analytics.repository";
 import {
   buildHistoryFactsByApplication,
+  computeAverageHiringTimeDays,
+  computeAverageOfferTimeDays,
+  computeEmploymentTypeAnalytics,
   computeFunnelAnalytics,
   computeGroupAnalytics,
   computeGroupAnalyticsFromStatistics,
   computeInsights,
   computeOverview,
+  computeTrendAnalysis,
+  computeWorkModeAnalytics,
   deriveOverviewCounts,
 } from "@/features/analytics/utils/analytics-calculations";
 import type {
@@ -26,6 +31,8 @@ function app(
     company_id: "company-1",
     cv_version_id: "cv-1",
     source: null,
+    work_mode: null,
+    employment_type: null,
     application_date: "2026-01-01",
     current_status: "Applied",
     companies: { name: "Acme" },
@@ -178,6 +185,8 @@ describe("computeGroupAnalytics", () => {
         "a1",
         {
           respondedAt: "2026-01-04T00:00:00.000Z",
+          offerEnteredAt: null,
+          acceptedEnteredAt: null,
           enteredStatuses: new Set<AnalyticsApplicationRow["current_status"]>(),
           rejectedFromStage: null,
         },
@@ -324,6 +333,7 @@ describe("deriveOverviewCounts", () => {
       total: 5,
       interviews: 2, // hr_interview_count + offer_count
       offers: 1,
+      accepted: 0,
       responded: 4, // total - (wishlist + applied)
     });
   });
@@ -333,6 +343,7 @@ describe("deriveOverviewCounts", () => {
       total: 0,
       interviews: 0,
       offers: 0,
+      accepted: 0,
       responded: 0,
     });
   });
@@ -395,14 +406,23 @@ describe("computeFunnelAnalytics", () => {
   });
 });
 
+const NO_TIME_METRICS = {
+  averageOfferTimeDays: null,
+  averageHiringTimeDays: null,
+};
+
 describe("computeOverview", () => {
   it("gates Interview/Offer Rate behind the documented 5-application minimum", () => {
-    const overview = computeOverview({
-      total: 4,
-      interviews: 4,
-      offers: 4,
-      responded: 4,
-    });
+    const overview = computeOverview(
+      {
+        total: 4,
+        interviews: 4,
+        offers: 4,
+        accepted: 0,
+        responded: 4,
+      },
+      NO_TIME_METRICS
+    );
 
     expect(overview.interviewRate.meetsMinimum).toBe(false);
     expect(overview.interviewRate.value).toBeNull();
@@ -410,12 +430,16 @@ describe("computeOverview", () => {
   });
 
   it("computes Interview/Offer Rate once the 5-application minimum is met", () => {
-    const overview = computeOverview({
-      total: 5,
-      interviews: 2,
-      offers: 1,
-      responded: 3,
-    });
+    const overview = computeOverview(
+      {
+        total: 5,
+        interviews: 2,
+        offers: 1,
+        accepted: 0,
+        responded: 3,
+      },
+      NO_TIME_METRICS
+    );
 
     expect(overview.interviewRate.meetsMinimum).toBe(true);
     expect(overview.interviewRate.value).toBe(40);
@@ -423,27 +447,60 @@ describe("computeOverview", () => {
   });
 
   it("Response Rate has no minimum beyond having at least one application", () => {
-    const overview = computeOverview({
-      total: 1,
-      interviews: 0,
-      offers: 0,
-      responded: 1,
-    });
+    const overview = computeOverview(
+      {
+        total: 1,
+        interviews: 0,
+        offers: 0,
+        accepted: 0,
+        responded: 1,
+      },
+      NO_TIME_METRICS
+    );
 
     expect(overview.responseRate.meetsMinimum).toBe(true);
     expect(overview.responseRate.value).toBe(100);
   });
 
   it("shows no Response Rate at all with zero applications", () => {
-    const overview = computeOverview({
-      total: 0,
-      interviews: 0,
-      offers: 0,
-      responded: 0,
-    });
+    const overview = computeOverview(
+      {
+        total: 0,
+        interviews: 0,
+        offers: 0,
+        accepted: 0,
+        responded: 0,
+      },
+      NO_TIME_METRICS
+    );
 
     expect(overview.responseRate.meetsMinimum).toBe(false);
     expect(overview.responseRate.value).toBeNull();
+  });
+
+  it("computes Acceptance Rate as Accepted / Offers, gated only on having at least one offer", () => {
+    const noOffers = computeOverview(
+      { total: 5, interviews: 5, offers: 0, accepted: 0, responded: 5 },
+      NO_TIME_METRICS
+    );
+    expect(noOffers.acceptanceRate.meetsMinimum).toBe(false);
+    expect(noOffers.acceptanceRate.value).toBeNull();
+
+    const withOffers = computeOverview(
+      { total: 5, interviews: 5, offers: 2, accepted: 1, responded: 5 },
+      NO_TIME_METRICS
+    );
+    expect(withOffers.acceptanceRate.meetsMinimum).toBe(true);
+    expect(withOffers.acceptanceRate.value).toBe(50);
+  });
+
+  it("passes Average Offer/Hiring Time through unchanged", () => {
+    const overview = computeOverview(
+      { total: 1, interviews: 0, offers: 0, accepted: 0, responded: 0 },
+      { averageOfferTimeDays: 12.5, averageHiringTimeDays: 30 }
+    );
+    expect(overview.averageOfferTimeDays).toBe(12.5);
+    expect(overview.averageHiringTimeDays).toBe(30);
   });
 });
 
@@ -539,5 +596,211 @@ describe("computeInsights", () => {
 
   it("returns no insights at all when nothing qualifies", () => {
     expect(computeInsights([], [], [], [])).toEqual([]);
+  });
+});
+
+describe("computeAverageOfferTimeDays / computeAverageHiringTimeDays", () => {
+  it("averages Application Date -> Offer / -> Accepted across all applications", () => {
+    const apps = [
+      app({ id: "a1", application_date: "2026-01-01" }),
+      app({ id: "a2", application_date: "2026-01-01" }),
+    ];
+    const historyFacts = buildHistoryFactsByApplication([
+      historyEntry({
+        application_id: "a1",
+        previous_status: "Final Interview",
+        new_status: "Offer",
+        changed_at: "2026-01-11T00:00:00.000Z",
+      }),
+      historyEntry({
+        application_id: "a1",
+        previous_status: "Offer",
+        new_status: "Accepted",
+        changed_at: "2026-01-21T00:00:00.000Z",
+      }),
+      historyEntry({
+        application_id: "a2",
+        previous_status: "Final Interview",
+        new_status: "Offer",
+        changed_at: "2026-01-06T00:00:00.000Z",
+      }),
+    ]);
+
+    // a1: 10 days (Jan 1 -> Jan 11), a2: 5 days (Jan 1 -> Jan 6) -> avg 7.5.
+    expect(computeAverageOfferTimeDays(apps, historyFacts)).toBe(7.5);
+    // Only a1 reached Accepted: 20 days (Jan 1 -> Jan 21).
+    expect(computeAverageHiringTimeDays(apps, historyFacts)).toBe(20);
+  });
+
+  it("returns null when no application has reached that stage yet", () => {
+    const apps = [app({ id: "a1" })];
+    expect(computeAverageOfferTimeDays(apps, new Map())).toBeNull();
+    expect(computeAverageHiringTimeDays(apps, new Map())).toBeNull();
+  });
+});
+
+describe("computeWorkModeAnalytics", () => {
+  it("groups by work_mode and computes Applications/Interview/Offer/Acceptance Rate", () => {
+    const apps = [
+      app({ id: "a1", work_mode: "Remote", current_status: "HR Interview" }),
+      app({ id: "a2", work_mode: "Remote", current_status: "Offer" }),
+      app({ id: "a3", work_mode: "Remote", current_status: "Accepted" }),
+      app({ id: "a4", work_mode: "On Site", current_status: "Applied" }),
+    ];
+
+    const rows = computeWorkModeAnalytics(apps);
+    const remote = rows.find((r) => r.id === "Remote")!;
+
+    expect(remote.applications).toBe(3);
+    // HR Interview, Offer, and Accepted are all interview-stage statuses.
+    expect(remote.interviewRate).toBe(100);
+    // Only Offer and Accepted count as offers.
+    expect(remote.offerRate).toBe(66.7);
+    // Acceptance Rate: Accepted / Offers (2), not Accepted / Applications (3).
+    expect(remote.acceptanceRate).toBe(50);
+  });
+
+  it("excludes applications with no recorded work mode", () => {
+    const apps = [app({ id: "a1", work_mode: null })];
+    expect(computeWorkModeAnalytics(apps)).toHaveLength(0);
+  });
+});
+
+describe("computeEmploymentTypeAnalytics", () => {
+  it("groups by employment_type and computes Applications/Responses/Offers/Average Response Time", () => {
+    const apps = [
+      app({
+        id: "a1",
+        employment_type: "Full Time",
+        current_status: "HR Interview",
+      }),
+      app({
+        id: "a2",
+        employment_type: "Full Time",
+        current_status: "Applied",
+      }),
+    ];
+    const historyFacts = buildHistoryFactsByApplication([
+      historyEntry({
+        application_id: "a1",
+        previous_status: "Applied",
+        new_status: "Recruiter Contact",
+        changed_at: "2026-01-04T00:00:00.000Z",
+      }),
+    ]);
+
+    const rows = computeEmploymentTypeAnalytics(apps, historyFacts);
+    const fullTime = rows.find((r) => r.id === "Full Time")!;
+
+    expect(fullTime.applications).toBe(2);
+    expect(fullTime.responses).toBe(1);
+    expect(fullTime.offers).toBe(0);
+    expect(fullTime.averageResponseTimeDays).toBe(3);
+  });
+
+  it("excludes applications with no recorded employment type", () => {
+    const apps = [app({ id: "a1", employment_type: null })];
+    expect(computeEmploymentTypeAnalytics(apps, new Map())).toHaveLength(0);
+  });
+});
+
+describe("computeTrendAnalysis", () => {
+  it("returns null below the documented 2-month minimum", () => {
+    expect(
+      computeTrendAnalysis([
+        {
+          id: "2026-01",
+          name: "2026-01",
+          applications: 5,
+          responses: 2,
+          interviews: 1,
+          offers: 0,
+          accepted: 0,
+          rejected: 0,
+          responseRate: 40,
+          interviewRate: 20,
+          offerRate: 0,
+          averageResponseTimeDays: null,
+        },
+      ])
+    ).toBeNull();
+  });
+
+  it("compares the last two months present and expresses changes as percentages", () => {
+    const trend = computeTrendAnalysis([
+      {
+        id: "2026-01",
+        name: "2026-01",
+        applications: 10,
+        responses: 4,
+        interviews: 2,
+        offers: 1,
+        accepted: 0,
+        rejected: 0,
+        responseRate: 40,
+        interviewRate: 20,
+        offerRate: 10,
+        averageResponseTimeDays: null,
+      },
+      {
+        id: "2026-02",
+        name: "2026-02",
+        applications: 15,
+        responses: 6,
+        interviews: 3,
+        offers: 2,
+        accepted: 0,
+        rejected: 0,
+        responseRate: 40,
+        interviewRate: 20,
+        offerRate: 13.3,
+        averageResponseTimeDays: null,
+      },
+    ]);
+
+    expect(trend).not.toBeNull();
+    expect(trend!.currentMonth).toBe("2026-02");
+    expect(trend!.previousMonth).toBe("2026-01");
+    expect(trend!.applicationGrowth).toBe(50);
+    expect(trend!.interviewGrowth).toBe(50);
+    expect(trend!.offerGrowth).toBe(100);
+    expect(trend!.responseGrowth).toBe(50);
+  });
+
+  it("returns null growth for a metric whose previous month was zero", () => {
+    const trend = computeTrendAnalysis([
+      {
+        id: "2026-01",
+        name: "2026-01",
+        applications: 5,
+        responses: 0,
+        interviews: 0,
+        offers: 0,
+        accepted: 0,
+        rejected: 0,
+        responseRate: 0,
+        interviewRate: 0,
+        offerRate: 0,
+        averageResponseTimeDays: null,
+      },
+      {
+        id: "2026-02",
+        name: "2026-02",
+        applications: 5,
+        responses: 2,
+        interviews: 1,
+        offers: 0,
+        accepted: 0,
+        rejected: 0,
+        responseRate: 40,
+        interviewRate: 20,
+        offerRate: 0,
+        averageResponseTimeDays: null,
+      },
+    ]);
+
+    expect(trend!.responseGrowth).toBeNull();
+    expect(trend!.interviewGrowth).toBeNull();
+    expect(trend!.offerGrowth).toBeNull();
   });
 });

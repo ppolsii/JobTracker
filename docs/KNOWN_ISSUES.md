@@ -150,7 +150,7 @@ Same root cause as Phases 4-9: no confirmed test account is reachable from this 
 
 ### No markdown rendering
 
-Note content is stored and displayed as plain text (`whitespace-pre-wrap`); markdown syntax a user types (e.g. `**bold**`) is preserved faithfully but not parsed into formatted HTML, since no markdown-rendering library is installed or approved (`IMPLEMENTATION_RULES.md` requires approval before adding a dependency). If real markdown rendering is wanted, it needs a dependency-approval conversation (e.g. `react-markdown` or similar) before implementation.
+**Resolved (Version 2, Phase 28).** `ApplicationNotesList` now renders `note.content` via `react-markdown` (approved before installation, per `IMPLEMENTATION_RULES.md`) instead of displaying it as plain text. No longer tracked.
 
 ### `ApplicationNoteService` and `ApplicationStatusService` intentionally use different cross-boundary styles
 
@@ -182,7 +182,7 @@ Same root cause as every prior phase: no confirmed test account is reachable fro
 
 ### Several ANALYTICS_ENGINE.md / FEATURES.md metrics are intentionally not implemented
 
-`IMPLEMENTATION_ORDER.md`'s Phase 12 task list names exactly 9 deliverables (Response Rate, Interview Rate, Offer Rate, Monthly/Company/CV/Source Analytics, Funnel Analytics, Insights). The following are described in `ANALYTICS_ENGINE.md` and/or `FEATURES.md` Feature 8 but appear in neither Phase 12's task list nor any other phase's: **Acceptance Rate** as its own top-level metric (currently used only internally, for the CV insight's tie-break), **Average Offer Time** / **Average Hiring Time** (the standalone "Time Metrics" section - only "Average Response Time" is used, since it's the one explicitly required as a column of the in-scope Company/CV/Source Analytics sections), **Work Mode Analytics**, **Employment Type Analytics**, and **Trend Analysis** (month-over-month growth percentages). This is a genuine, real documentation gap - not an oversight - flagged here the same way Phase 8 flagged "Duplicate application." If any of these are wanted, they should be added to `IMPLEMENTATION_ORDER.md` explicitly (or claimed by a specific future phase) rather than assumed to already exist.
+**Resolved (Version 2, Phase 29).** `IMPLEMENTATION_ORDER_V2.md`'s Phase 29 ("Analytics Completion") implemented the five previously-missing metrics: **Acceptance Rate** as its own top-level metric (`AnalyticsOverview.acceptanceRate` - Accepted Offers / Offers, gated only on having at least one offer), **Average Offer Time** / **Average Hiring Time** (`AnalyticsOverview.averageOfferTimeDays`/`averageHiringTimeDays` - computed globally across the account, not per grouping), **Work Mode Analytics** and **Employment Type Analytics** (`AnalyticsSummary.workModeAnalytics`/`employmentTypeAnalytics` - grouped from the same bulk applications fetch Source Analytics already uses, since no backing SQL view exists for either), and **Trend Analysis** (`AnalyticsSummary.trend` - derived from the already-computed `monthlyAnalytics`, `null` below the documented 2-month minimum). No longer tracked.
 
 ### Two bulk reads aggregated in application code, not SQL `GROUP BY`
 
@@ -198,7 +198,7 @@ Same root cause as every prior phase: no confirmed test account is reachable fro
 
 ### No dedicated Search results page
 
-`UI_SYSTEM.md` documents "Search" only under "Top Navigation," with no "Search Page" section the way Dashboard/Analytics/Applications/Companies each get one - the header dropdown is the complete UI surface for this phase, not a placeholder for a fuller page.
+**Resolved (Version 2, Phase 27).** `UI_SYSTEM.md` now documents a "Search Page" section; `/search` provides a full, paginated results view (three independently paginated sections - Companies, Applications, Notes), reached from the Top Navigation dropdown's new "View all results" link. No longer tracked.
 
 ---
 

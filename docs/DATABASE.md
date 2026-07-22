@@ -796,6 +796,82 @@ Users may only `select` their own row (`user_id = auth.uid()`). No `insert`/`upd
 
 ---
 
+# interview_feedback
+
+Version 2, Phase 30 (`IMPLEMENTATION_ORDER_V2.md`) - attaches structured feedback to a specific `application_status_history` row.
+
+Unlike `application_notes`, this table has its own `user_id` column (the same shape `applications`/`companies`/`cv_versions` already use), so RLS and `InterviewFeedbackRepository` both filter on it directly. Ownership is still inherited through Status History too: the insert/update RLS policies additionally require the referenced `application_status_history` row to belong to an application owned by that same user.
+
+Columns
+
+id
+
+uuid
+
+---
+
+application_status_history_id
+
+uuid
+
+FK application_status_history
+
+---
+
+user_id
+
+uuid
+
+FK users
+
+---
+
+rating
+
+integer
+
+Nullable. 1-5.
+
+---
+
+format
+
+enum (`interview_format`)
+
+Nullable.
+
+---
+
+notes
+
+text
+
+Required. Markdown supported, matching `application_notes.content`.
+
+---
+
+created_at
+
+timestamp
+
+---
+
+updated_at
+
+timestamp
+
+---
+
+deleted_at
+
+timestamp
+
+Row Level Security
+
+Users may `select`/`insert`/`update` rows where `user_id = auth.uid()`. `insert`/`update` additionally require the target `application_status_history_id` to belong to an application owned by that same user. No `delete` policy or grant exists - soft delete only (`deleted_at`), matching every other business entity.
+
+---
+
 # Enums
 
 work_mode
@@ -887,6 +963,20 @@ canceled
 unpaid
 
 paused
+
+---
+
+interview_format (Version 2, Phase 30)
+
+Phone
+
+Video
+
+On-site
+
+Technical
+
+Behavioral
 
 ---
 

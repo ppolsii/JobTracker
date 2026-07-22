@@ -449,6 +449,26 @@ Future versions may include additional settings.
 
 ---
 
+# Feature 14 - Interview Feedback (Version 2, Phase 30)
+
+## Objective
+
+Let users attach structured feedback to a specific stage of the recruitment process, not just the application as a whole.
+
+## Behaviour
+
+Feedback belongs to exactly one Status History entry (one interview stage), never to the application directly - ownership is inherited through that entry's application.
+
+Rating (1-5) and format (Phone, Video, On-site, Technical, Behavioral) are optional. Notes are required, Markdown supported, matching Notes' own rule.
+
+Any number of feedback entries may be appended to the same stage.
+
+## Acceptance Criteria
+
+Users can create, edit and archive feedback entries attached to a Status History entry.
+
+---
+
 # Common Functional Requirements
 
 Every feature must:
@@ -530,8 +550,6 @@ Social Features
 # Future Features
 
 The current architecture should support future implementation of:
-
-Interview Feedback
 
 Recruiter Contacts
 

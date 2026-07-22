@@ -157,15 +157,21 @@ export const ApplicationNoteService = {
   // discipline applies here: SearchService goes through this Service, never
   // ApplicationNoteRepository, which stays the only module allowed to query
   // application_notes (ADR-008).
+  //
+  // IMPLEMENTATION_ORDER_V2.md Phase 27: takes a {page, limit} object
+  // (matching CompanyService.list/ApplicationService.list's convention)
+  // instead of a flat limit, and returns a total alongside the rows so the
+  // dedicated Search page can paginate. SearchService's default call
+  // (page 1) is unchanged for the existing dropdown.
   async search(
     userId: string,
     query: string,
-    limit: number
-  ): Promise<ActionResult<NoteSearchRow[]>> {
-    const { data, error } = await ApplicationNoteRepository.searchByContent(
+    params: { page: number; limit: number }
+  ): Promise<ActionResult<{ notes: NoteSearchRow[]; total: number }>> {
+    const { data, error, count } = await ApplicationNoteRepository.searchByContent(
       userId,
       query,
-      limit
+      params
     );
 
     if (error) {
@@ -178,7 +184,7 @@ export const ApplicationNoteService = {
       };
     }
 
-    return { success: true, data: data ?? [] };
+    return { success: true, data: { notes: data ?? [], total: count ?? 0 } };
   },
 
   // Phase 14 (Export) "Export contains every user-owned entity". Backs

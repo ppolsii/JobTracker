@@ -42,10 +42,14 @@ export function AnalyticsRateCards({
   overview: AnalyticsOverview;
 }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-3">
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <RateCard label="Response Rate" metric={overview.responseRate} />
       <RateCard label="Interview Rate" metric={overview.interviewRate} />
       <RateCard label="Offer Rate" metric={overview.offerRate} />
+      {/* IMPLEMENTATION_ORDER_V2.md Phase 29 - ANALYTICS_ENGINE.md
+          "Acceptance Rate": "Accepted Offers / Offers", a top-level metric in
+          its own right. */}
+      <RateCard label="Acceptance Rate" metric={overview.acceptanceRate} />
     </div>
   );
 }

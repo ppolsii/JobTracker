@@ -32,6 +32,13 @@ export interface AnalyticsApplicationRow {
   company_id: string;
   cv_version_id: string;
   source: ApplicationSource | null;
+  // IMPLEMENTATION_ORDER_V2.md Phase 29: Work Mode/Employment Type Analytics
+  // group by these two columns - no statistics view carries them (DATABASE.md
+  // reserves no `work_mode_statistics`/`employment_type_statistics` name), so
+  // they're added to the same bulk analytics projection Source Analytics
+  // already groups by in application code.
+  work_mode: WorkMode | null;
+  employment_type: EmploymentType | null;
   application_date: string | null;
   current_status: ApplicationStatus;
   companies: { name: string };
