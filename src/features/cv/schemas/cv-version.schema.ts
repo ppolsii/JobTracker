@@ -19,10 +19,20 @@ export const archiveCVVersionSchema = z.object({
 });
 export type ArchiveCVVersionInput = z.infer<typeof archiveCVVersionSchema>;
 
+// IMPLEMENTATION_ORDER_V2.md Phase 26.
+export const restoreCVVersionSchema = z.object({
+  id: z.string().uuid(),
+});
+export type RestoreCVVersionInput = z.infer<typeof restoreCVVersionSchema>;
+
 // Used to sanitize the CV versions list page's searchParams (untrusted input
 // per CODE_STYLE.md "Security"). Falls back to sane defaults instead of
 // erroring, since a malformed page/limit in the URL shouldn't break a read.
 export const listCVVersionsSchema = z.object({
+  archived: z
+    .string()
+    .optional()
+    .transform((value) => value === "true"),
   page: z.coerce.number().int().min(1).catch(1),
   limit: z.coerce.number().int().min(1).max(100).catch(20),
 });

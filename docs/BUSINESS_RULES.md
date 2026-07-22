@@ -379,6 +379,16 @@ This preserves analytics consistency.
 
 ---
 
+# Restore (Version 2, Phase 26)
+
+Every soft-deleted entity above may be restored (deleted_at set back to null).
+
+Restoring a Company or CV Version must re-validate the same per-user uniqueness rule create/update already enforce. Restoring "Google" must fail if a different, currently active company named "Google" now exists - the same partial unique index create/update rely on is the actual enforcement; restore is not a special case that bypasses it.
+
+Applications have no uniqueness rule and no reference-count rule to re-validate on restore (see "Duplicate Applications" above) - restoring an application is unconditional once ownership is confirmed.
+
+Restoring never re-writes history. Status History, Notes, and every other historical record remain exactly as they were - restore only reverses the one field (deleted_at) that soft-delete itself set.
+
 # Time
 
 All timestamps stored in UTC.

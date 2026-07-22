@@ -227,6 +227,65 @@ export const ApplicationService = {
     return { success: true, data };
   },
 
+  // IMPLEMENTATION_ORDER_V2.md Phase 26. No uniqueness rule to re-validate
+  // here (BUSINESS_RULES.md "Duplicate Applications": duplicates are
+  // allowed), unlike Company/CV Version restore.
+  async restore(userId: string, id: string): Promise<ActionResult<Application>> {
+    const { data, error } = await ApplicationRepository.restore(userId, id);
+
+    if (error || !data) {
+      return {
+        success: false,
+        error: {
+          message: "Archived application not found.",
+          code: ERROR_CODES.NOT_FOUND,
+        },
+      };
+    }
+
+    console.info(`Application ${id} restored by user ${userId}.`);
+    return { success: true, data };
+  },
+
+  // Backs the Archived view (IMPLEMENTATION_ORDER_V2.md Phase 26) - paginated,
+  // unlike listAllIncludingArchived below (Export's unbounded read).
+  async listArchived(
+    userId: string,
+    params: { page: number; limit: number }
+  ): Promise<
+    ActionResult<{
+      applications: ApplicationWithRelations[];
+      total: number;
+      page: number;
+      limit: number;
+    }>
+  > {
+    const { data, error, count } = await ApplicationRepository.listArchived(
+      userId,
+      params
+    );
+
+    if (error) {
+      return {
+        success: false,
+        error: {
+          message: "Something went wrong while loading archived applications.",
+          code: ERROR_CODES.INTERNAL_ERROR,
+        },
+      };
+    }
+
+    return {
+      success: true,
+      data: {
+        applications: data ?? [],
+        total: count ?? 0,
+        page: params.page,
+        limit: params.limit,
+      },
+    };
+  },
+
   // API.md "Get Application": "Returns a single application. Only if owned
   // by the authenticated user." Backs the Application Detail page (Phase 9)
   // and ApplicationStatusService's ownership/current-status check.

@@ -942,3 +942,37 @@ The user chose to defer external monitoring entirely this phase, rather than nam
 ### Verification
 
 - No source file changed. `npm run typecheck`, `npm run lint`, `npm run test` (107 tests, 12 files, unchanged), and `npm run build` re-run to confirm nothing regressed - all pass, identical to Phase 24's results.
+
+---
+
+## Phase 26 — Restore / Unarchive (2026-07-21)
+
+Completed the soft-delete lifecycle for Companies, CV Versions, and Applications by adding the missing restore path, per `IMPLEMENTATION_ORDER_V2.md`. No changes to Billing, Analytics, or Dashboard.
+
+### Added
+
+- `restore(userId, id)` and `listArchived(userId, params)` on `CompanyRepository`/`CompanyService`, `CVVersionRepository`/`CVVersionService`, and `ApplicationRepository`/`ApplicationService`. `listArchived` mirrors each entity's existing `list` shape (paginated), filtered to archived rows only, ordered by most-recently-archived first (`updated_at desc`) - a new, separate method rather than an `includeArchived` branch on the widely-used `list`, the same isolation choice `listAllIncludingArchived` (Phase 14) already established for Export.
+- `restoreCompanySchema`, `restoreCVVersionSchema`, `restoreApplicationSchema`, and `restoreCompanyAction`/`restoreCVVersionAction`/`restoreApplicationAction` - each mirrors its sibling `archive*` schema/action exactly.
+- An `archived` boolean added to each entity's `listXSchema` (query-string driven, only the literal string `"true"` means true - a stray `?archived=false` doesn't accidentally flip on via JS's truthy-string coercion, which plain `z.coerce.boolean()` would have done).
+- Each list page (`/companies`, `/cv-versions`, `/applications`) gained an "Archived" toggle link and, when active, calls `listArchived` instead of `list`. `CompaniesTable`/`CVVersionsTable`/`ApplicationsTable` each gained an `archived` prop that swaps Edit/Archive for a single Restore action - the same table component is reused rather than a parallel "Archived*Table," since only the available row actions differ, not the row shape.
+- For Applications specifically: View and Edit are omitted (not just hidden) on archived rows, since both require an active application (`ApplicationService.getById`/the edit form both depend on the same active-only read every other archived-row access already respects) - they would not work until the row is restored.
+
+### Business rules (`BUSINESS_RULES.md` "Restore", new section)
+
+- Restoring a Company or CV Version re-validates the same per-user uniqueness rule Create/Update already enforce - the existing partial unique index (`(user_id, lower(name)) WHERE deleted_at IS NULL`) is the real enforcement, mapped to the same friendly conflict message pattern `create`/`update` already use for the identical `23505` error code. No separate pre-check query was added, since the archived row's own name never changes as part of restoring it.
+- Applications have no uniqueness or reference-count rule to re-validate on restore (`BUSINESS_RULES.md` "Duplicate Applications": duplicates are allowed) - a plain, unconditional restore once ownership is confirmed.
+- Restoring never rewrites history - it only reverses the one field (`deleted_at`) soft-delete itself set.
+
+### Fixed
+
+- `company.schema.test.ts` (pre-existing) needed one assertion updated once `listCompaniesSchema` gained the new `archived` field; a new test was added confirming only the literal string `"true"` is treated as archived.
+
+### Documentation updated
+
+- `BUSINESS_RULES.md` - new "Restore" section.
+- `API.md` - new "Restore Application"/"Restore Company"/"Restore CV Version" operations; each "Get" endpoint notes its new `archived` filter.
+
+### Verification
+
+- `npm run typecheck`, `npm run lint`, `npm run test` (108 tests, 12 files - 1 new), and `npm run build` all pass.
+- Not verified against a live database in this environment - same persistent limitation as every phase since Phase 4.

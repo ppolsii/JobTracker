@@ -147,6 +147,48 @@ export const CVVersionService = {
     return { success: true, data };
   },
 
+  // IMPLEMENTATION_ORDER_V2.md Phase 26. Re-validates the same uniqueness
+  // rule create/update already enforce - restoring a CV version must fail
+  // if a different, newer active one now has the same name. The partial
+  // unique index is the real enforcement (same 23505 mapping create/update
+  // already use).
+  async restore(userId: string, id: string): Promise<ActionResult<CVVersion>> {
+    const { data, error } = await CVVersionRepository.restore(userId, id);
+
+    if (error) {
+      if (error.code === POSTGRES_ERROR_CODES.UNIQUE_VIOLATION) {
+        return {
+          success: false,
+          error: {
+            message:
+              "An active CV version already has this name. Rename the active one, then try restoring again.",
+            code: ERROR_CODES.CONFLICT,
+          },
+        };
+      }
+      return {
+        success: false,
+        error: {
+          message: "Something went wrong while restoring the CV version.",
+          code: ERROR_CODES.INTERNAL_ERROR,
+        },
+      };
+    }
+
+    if (!data) {
+      return {
+        success: false,
+        error: {
+          message: "Archived CV version not found.",
+          code: ERROR_CODES.NOT_FOUND,
+        },
+      };
+    }
+
+    console.info(`CV version ${id} restored by user ${userId}.`);
+    return { success: true, data };
+  },
+
   async list(
     userId: string,
     params: { page: number; limit: number }
@@ -168,6 +210,45 @@ export const CVVersionService = {
         success: false,
         error: {
           message: "Something went wrong while loading CV versions.",
+          code: ERROR_CODES.INTERNAL_ERROR,
+        },
+      };
+    }
+
+    return {
+      success: true,
+      data: {
+        cvVersions: data ?? [],
+        total: count ?? 0,
+        page: params.page,
+        limit: params.limit,
+      },
+    };
+  },
+
+  // Backs the Archived view (IMPLEMENTATION_ORDER_V2.md Phase 26) - paginated,
+  // unlike ExportService's unbounded listAllIncludingArchived below.
+  async listArchived(
+    userId: string,
+    params: { page: number; limit: number }
+  ): Promise<
+    ActionResult<{
+      cvVersions: CVVersion[];
+      total: number;
+      page: number;
+      limit: number;
+    }>
+  > {
+    const { data, error, count } = await CVVersionRepository.listArchived(
+      userId,
+      params
+    );
+
+    if (error) {
+      return {
+        success: false,
+        error: {
+          message: "Something went wrong while loading archived CV versions.",
           code: ERROR_CODES.INTERNAL_ERROR,
         },
       };

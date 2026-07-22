@@ -7,6 +7,7 @@ import { AuthService } from "@/features/auth/services/auth.service";
 import {
   archiveCVVersionSchema,
   createCVVersionSchema,
+  restoreCVVersionSchema,
   updateCVVersionSchema,
 } from "@/features/cv/schemas/cv-version.schema";
 import { CVVersionService } from "@/features/cv/services/cv-version.service";
@@ -63,6 +64,24 @@ export async function archiveCVVersionAction(
   }
 
   const result = await CVVersionService.archive(auth.data, parsed.data.id);
+  if (result.success) {
+    revalidatePath(ROUTES.CV_VERSIONS);
+  }
+  return result;
+}
+
+export async function restoreCVVersionAction(
+  input: unknown
+): Promise<ActionResult<CVVersion>> {
+  const auth = await AuthService.requireUserId();
+  if (!auth.success) return auth;
+
+  const parsed = restoreCVVersionSchema.safeParse(input);
+  if (!parsed.success) {
+    return validationError(parsed.error.issues[0]?.message ?? "Invalid input.");
+  }
+
+  const result = await CVVersionService.restore(auth.data, parsed.data.id);
   if (result.success) {
     revalidatePath(ROUTES.CV_VERSIONS);
   }

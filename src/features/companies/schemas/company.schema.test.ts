@@ -82,6 +82,24 @@ describe("listCompaniesSchema", () => {
       limit: "50",
     });
 
-    expect(result).toEqual({ query: "acme", page: 2, limit: 50 });
+    expect(result).toEqual({
+      query: "acme",
+      archived: false,
+      page: 2,
+      limit: 50,
+    });
+  });
+
+  // IMPLEMENTATION_ORDER_V2.md Phase 26: only the literal string "true"
+  // means true - a stray `?archived=false` (or anything else) must not
+  // accidentally flip on via truthy-string coercion.
+  it("only treats the literal string 'true' as archived", () => {
+    expect(listCompaniesSchema.parse({}).archived).toBe(false);
+    expect(listCompaniesSchema.parse({ archived: "false" }).archived).toBe(
+      false
+    );
+    expect(listCompaniesSchema.parse({ archived: "true" }).archived).toBe(
+      true
+    );
   });
 });

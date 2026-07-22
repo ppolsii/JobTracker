@@ -117,6 +117,8 @@ Supports sorting.
 
 Supports pagination.
 
+Version 2, Phase 26: an `archived` filter returns only soft-deleted applications instead (the Restore view), without the other filters/sorting - a simple, unfiltered, paginated list ordered by most-recently-archived first.
+
 ---
 
 Supported Filters
@@ -199,6 +201,20 @@ Never permanently remove data.
 
 ---
 
+## Restore Application
+
+POST
+
+/applications/:id/restore
+
+Version 2, Phase 26.
+
+Reverses a soft delete. No uniqueness or reference-count rule applies (`BUSINESS_RULES.md` "Restore").
+
+Returns the restored application object.
+
+---
+
 # Application Status
 
 ## Update Status
@@ -271,6 +287,8 @@ Supports search.
 
 Supports pagination.
 
+Version 2, Phase 26: an `archived` filter returns only soft-deleted companies instead (the Restore view) - mutually exclusive with search, since restoring from a large archive was judged not to need it yet.
+
 ---
 
 ## Update Company
@@ -292,6 +310,20 @@ DELETE
 Soft delete.
 
 Reject deletion if referenced by applications.
+
+---
+
+## Restore Company
+
+POST
+
+/companies/:id/restore
+
+Version 2, Phase 26.
+
+Reverses a soft delete. Rejected if an active company already has the same name (`BUSINESS_RULES.md` "Restore" - the same per-user uniqueness rule Create/Update enforce).
+
+Returns the restored company object.
 
 ---
 
@@ -321,6 +353,8 @@ GET
 
 Returns all CV versions.
 
+Version 2, Phase 26: an `archived` filter returns only soft-deleted CV versions instead (the Restore view).
+
 ---
 
 ## Update CV Version
@@ -340,6 +374,20 @@ DELETE
 /cv-versions/:id
 
 Reject deletion if referenced by applications.
+
+---
+
+## Restore CV Version
+
+POST
+
+/cv-versions/:id/restore
+
+Version 2, Phase 26.
+
+Reverses a soft delete. Rejected if an active CV version already has the same name (`BUSINESS_RULES.md` "Restore" - the same per-user uniqueness rule Create/Update enforce).
+
+Returns the restored CV version object.
 
 ---
 

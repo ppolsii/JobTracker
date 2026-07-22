@@ -89,6 +89,43 @@ export const CompanyRepository = {
       .maybeSingle();
   },
 
+  // IMPLEMENTATION_ORDER_V2.md Phase 26. The partial unique index on
+  // (user_id, lower(name)) WHERE deleted_at IS NULL is the real enforcement
+  // against restoring into a name conflict - CompanyService maps the
+  // resulting 23505 the same way create/update already do.
+  async restore(userId: string, id: string) {
+    const supabase = await createClient();
+    return supabase
+      .from("companies")
+      .update({ deleted_at: null })
+      .eq("user_id", userId)
+      .eq("id", id)
+      .not("deleted_at", "is", null)
+      .select(COMPANY_COLUMNS)
+      .maybeSingle();
+  },
+
+  // Paginated sibling of `list`, filtered to archived rows only - backs the
+  // Archived view a user restores from. Ordered by most-recently-archived
+  // first (updated_at, set by the existing set_updated_at trigger on any
+  // update including archive/restore itself).
+  async listArchived(
+    userId: string,
+    { page, limit }: { page: number; limit: number }
+  ) {
+    const supabase = await createClient();
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    return supabase
+      .from("companies")
+      .select(COMPANY_COLUMNS, { count: "exact" })
+      .eq("user_id", userId)
+      .not("deleted_at", "is", null)
+      .order("updated_at", { ascending: false })
+      .range(from, to);
+  },
+
   // Used by CompanyService to enforce BUSINESS_RULES.md: "A company cannot
   // be deleted if applications reference it."
   async countActiveApplications(userId: string, companyId: string) {

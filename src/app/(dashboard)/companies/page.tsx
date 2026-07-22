@@ -1,4 +1,6 @@
+import { Archive } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { ROUTES } from "@/config/routes";
@@ -9,12 +11,14 @@ import { CompanySearchBar } from "@/features/companies/components/CompanySearchB
 import { listCompaniesSchema } from "@/features/companies/schemas/company.schema";
 import { CompanyService } from "@/features/companies/services/company.service";
 import { PaginationControls } from "@/shared/components/PaginationControls";
+import { Button } from "@/shared/components/ui/button";
 
 export const metadata: Metadata = { title: "Companies" };
 
-function buildPageUrl(page: number, query: string | undefined) {
+function buildPageUrl(page: number, query: string | undefined, archived: boolean) {
   const params = new URLSearchParams();
   if (query) params.set("query", query);
+  if (archived) params.set("archived", "true");
   params.set("page", String(page));
   return `${ROUTES.COMPANIES}?${params.toString()}`;
 }
@@ -29,9 +33,13 @@ export default async function CompaniesPage({
     redirect(ROUTES.LOGIN);
   }
 
-  const { query, page, limit } = listCompaniesSchema.parse(await searchParams);
+  const { query, archived, page, limit } = listCompaniesSchema.parse(
+    await searchParams
+  );
 
-  const result = await CompanyService.list(user.id, { query, page, limit });
+  const result = archived
+    ? await CompanyService.listArchived(user.id, { page, limit })
+    : await CompanyService.list(user.id, { query, page, limit });
   if (!result.success) {
     return <p className="text-sm text-destructive">{result.error.message}</p>;
   }
@@ -42,18 +50,41 @@ export default async function CompaniesPage({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between gap-4">
-        <h2 className="text-lg font-semibold">Companies</h2>
-        <CompanyCreateButton />
+        <h2 className="text-lg font-semibold">
+          {archived ? "Archived Companies" : "Companies"}
+        </h2>
+        <div className="flex items-center gap-2">
+          {archived ? (
+            <Button variant="outline" render={<Link href={ROUTES.COMPANIES} />}>
+              Back to active
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="ghost"
+                render={<Link href={`${ROUTES.COMPANIES}?archived=true`} />}
+              >
+                <Archive className="size-4" />
+                Archived
+              </Button>
+              <CompanyCreateButton />
+            </>
+          )}
+        </div>
       </div>
 
-      <CompanySearchBar defaultValue={query ?? ""} />
+      {archived ? null : <CompanySearchBar defaultValue={query ?? ""} />}
 
-      <CompaniesTable companies={companies} pageSize={limit} />
+      <CompaniesTable
+        companies={companies}
+        pageSize={limit}
+        archived={archived}
+      />
 
       <PaginationControls
         page={page}
         pageCount={pageCount}
-        buildHref={(p) => buildPageUrl(p, query)}
+        buildHref={(p) => buildPageUrl(p, query, archived)}
       />
     </div>
   );

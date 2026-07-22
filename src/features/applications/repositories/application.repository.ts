@@ -135,6 +135,42 @@ export const ApplicationRepository = {
       .maybeSingle();
   },
 
+  // IMPLEMENTATION_ORDER_V2.md Phase 26. Unlike Companies/CV Versions,
+  // applications have no uniqueness rule to re-validate (BUSINESS_RULES.md
+  // "Duplicate Applications": duplicates are allowed) - a plain restore.
+  async restore(userId: string, id: string) {
+    const supabase = await createClient();
+    return supabase
+      .from("applications")
+      .update({ deleted_at: null })
+      .eq("user_id", userId)
+      .eq("id", id)
+      .not("deleted_at", "is", null)
+      .select(APPLICATION_COLUMNS)
+      .maybeSingle();
+  },
+
+  // Paginated sibling of `list`, filtered to archived rows only - backs the
+  // Archived view a user restores from. No filters/sort beyond pagination,
+  // matching the same simplicity Companies/CV Versions' Archived view uses.
+  async listArchived(
+    userId: string,
+    { page, limit }: { page: number; limit: number }
+  ) {
+    const supabase = await createClient();
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    return supabase
+      .from("applications")
+      .select(APPLICATION_LIST_COLUMNS, { count: "exact" })
+      .eq("user_id", userId)
+      .not("deleted_at", "is", null)
+      .order("updated_at", { ascending: false })
+      .range(from, to)
+      .returns<ApplicationWithRelations[]>();
+  },
+
   // Generic, mechanical count primitive - which statuses constitute "Active",
   // "Interviews", etc. is an ANALYTICS_ENGINE.md-defined business decision
   // that belongs in a Service (ApplicationStatsService), not here. Omitting

@@ -86,6 +86,12 @@ export const archiveApplicationSchema = z.object({
 });
 export type ArchiveApplicationInput = z.infer<typeof archiveApplicationSchema>;
 
+// IMPLEMENTATION_ORDER_V2.md Phase 26.
+export const restoreApplicationSchema = z.object({
+  id: z.string().uuid(),
+});
+export type RestoreApplicationInput = z.infer<typeof restoreApplicationSchema>;
+
 // FEATURES.md Feature 6 / BUSINESS_RULES.md "Allowed State Transitions".
 // `application_date` is only actually required by ApplicationStatusService
 // when transitioning out of Wishlist for the first time - validated there,
@@ -144,6 +150,10 @@ export type ArchiveApplicationNoteInput = z.infer<
 // erroring, since malformed filters in the URL shouldn't break a read.
 export const listApplicationsSchema = z.object({
   query: z.string().trim().max(255).optional(),
+  archived: z
+    .string()
+    .optional()
+    .transform((value) => value === "true"),
   status: z.enum(APPLICATION_STATUS_OPTIONS).optional().catch(undefined),
   company_id: z.string().uuid().optional().catch(undefined),
   cv_version_id: z.string().uuid().optional().catch(undefined),

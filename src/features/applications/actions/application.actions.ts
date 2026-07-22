@@ -7,6 +7,7 @@ import { AuthService } from "@/features/auth/services/auth.service";
 import {
   archiveApplicationSchema,
   createApplicationSchema,
+  restoreApplicationSchema,
   updateApplicationSchema,
 } from "@/features/applications/schemas/application.schema";
 import { ApplicationService } from "@/features/applications/services/application.service";
@@ -63,6 +64,24 @@ export async function archiveApplicationAction(
   }
 
   const result = await ApplicationService.archive(auth.data, parsed.data.id);
+  if (result.success) {
+    revalidatePath(ROUTES.APPLICATIONS);
+  }
+  return result;
+}
+
+export async function restoreApplicationAction(
+  input: unknown
+): Promise<ActionResult<Application>> {
+  const auth = await AuthService.requireUserId();
+  if (!auth.success) return auth;
+
+  const parsed = restoreApplicationSchema.safeParse(input);
+  if (!parsed.success) {
+    return validationError(parsed.error.issues[0]?.message ?? "Invalid input.");
+  }
+
+  const result = await ApplicationService.restore(auth.data, parsed.data.id);
   if (result.success) {
     revalidatePath(ROUTES.APPLICATIONS);
   }

@@ -82,6 +82,41 @@ export const CVVersionRepository = {
       .maybeSingle();
   },
 
+  // IMPLEMENTATION_ORDER_V2.md Phase 26. The partial unique index on
+  // (user_id, lower(name)) WHERE deleted_at IS NULL is the real enforcement
+  // against restoring into a name conflict - CVVersionService maps the
+  // resulting 23505 the same way create/update already do.
+  async restore(userId: string, id: string) {
+    const supabase = await createClient();
+    return supabase
+      .from("cv_versions")
+      .update({ deleted_at: null })
+      .eq("user_id", userId)
+      .eq("id", id)
+      .not("deleted_at", "is", null)
+      .select(CV_VERSION_COLUMNS)
+      .maybeSingle();
+  },
+
+  // Paginated sibling of `list`, filtered to archived rows only - backs the
+  // Archived view a user restores from.
+  async listArchived(
+    userId: string,
+    { page, limit }: { page: number; limit: number }
+  ) {
+    const supabase = await createClient();
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    return supabase
+      .from("cv_versions")
+      .select(CV_VERSION_COLUMNS, { count: "exact" })
+      .eq("user_id", userId)
+      .not("deleted_at", "is", null)
+      .order("updated_at", { ascending: false })
+      .range(from, to);
+  },
+
   // Used by CVVersionService to enforce BUSINESS_RULES.md "CV Rules": "A CV
   // version cannot be deleted while applications reference it."
   async countActiveApplications(userId: string, cvVersionId: string) {
