@@ -206,6 +206,10 @@ TypeScript successful
 
 ---
 
+Version 2, Phase 25: `.github/workflows/ci.yml` already enforces all four requirements above on every push/PR to `main` (confirmed - no gap found, no change needed). Connecting the GitHub repository to Vercel itself remains an outstanding, manual, dashboard-side step - it cannot be performed from this environment (no Vercel account/dashboard access exists here). This has been the status since Phase 18 (`KNOWN_ISSUES.md`) and is unchanged by this phase.
+
+---
+
 # Environment Variables
 
 The following variables are required.
@@ -353,6 +357,8 @@ Supabase Logs
 Browser Console
 
 Future versions may integrate external monitoring solutions.
+
+Version 2, Phase 25: reviewed, per `IMPLEMENTATION_ORDER_V2.md`. No document names a specific vendor, and introducing one would mean a new paid dependency (`PROJECT_CONSTRAINTS.md`: "No paid APIs," costs "as close to €0/month as possible") requiring approval and real credentials this environment cannot obtain - deliberately deferred rather than guessed, per this phase's explicit "stop and ask" instruction. Vercel Logs/Supabase Logs/Browser Console remain the tooling until a specific vendor is chosen in a future phase.
 
 ---
 

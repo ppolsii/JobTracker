@@ -653,19 +653,47 @@ Without requiring breaking schema changes.
 
 ---
 
-# Billing (Version 2, Phase 23 - drafted, not yet enforced)
+# Billing (Version 2, Phase 23 data model; Phase 24 enforcement)
 
-The application is preparing to support a Free and a Pro plan. This section records the rules already decided about the data model itself. It does not gate anything yet - no feature currently reads a user's plan, and no code currently depends on this section. `IMPLEMENTATION_ORDER_V2.md` Phase 24 ("Plan Gating Enforcement") is expected to extend this section with the actual per-feature limits before any gating is implemented, per this document's own precedence over implementation.
+The application supports a Free and a Pro plan (`VALUE_PROPOSITION.md` "Free Plan"/"Pro Plan").
 
 Every user has exactly one subscription record.
 
 A user is created with plan `free` by default.
 
-A user may never set their own plan or subscription status directly. This is not a temporary limitation - it must remain true even after Phase 24 adds gating.
+A user may never set their own plan or subscription status directly. This is not a temporary limitation - it must remain true regardless of how many features are gated.
 
 Subscription status is a mirror of the payment provider's own state. The application must never invent or infer a status.
 
 Downgrading, cancelling, or a failed payment must never delete historical data (Applications, Companies, CV Versions, Notes). Plan changes affect access going forward only, never past records - consistent with this document's general soft-delete/history-preservation principle.
+
+A user is on the Pro plan when, and only when, their subscription's `plan` column is `pro`. `status` (Stripe's own subscription status, mirrored as-is per Phase 23) is not itself consulted for this decision - nothing sets `plan` to `pro` yet (Checkout does not exist - `IMPLEMENTATION_ORDER_V2.md` Phase 24 explicitly excludes it), so this rule is currently unreachable for every user. It is documented now so the eventual Checkout implementation has one clear, already-agreed rule to satisfy, rather than inventing one at that point.
+
+---
+
+## Enforced Limits (Version 2, Phase 24)
+
+Every entitlement decision below is made in exactly one place, `BillingService`, per `ARCHITECTURE.md`'s Business Rule Ownership. No other Service, Repository, or Server Action decides these rules or inspects `plan` itself.
+
+### Application Limit
+
+Free plan: a maximum of 25 active (non-archived) applications.
+
+Pro plan: unlimited applications.
+
+Archiving an application frees a slot - the limit counts currently active applications, not lifetime history, consistent with this document's general soft-delete philosophy (soft-deleted records still exist, but are no longer "active").
+
+Attempting to create an application while at the limit must be rejected with a clear, specific message naming the limit - never a generic error (see this document's own "Error Handling" section).
+
+### Export
+
+Export (CSV and JSON) requires the Pro plan.
+
+---
+
+## Not Yet Enforced
+
+`VALUE_PROPOSITION.md` also names "Historical trends," "Advanced analytics," "Advanced filtering," and "Advanced insights" as Pro-only. None of these has a documented basic/advanced split - the current Analytics/Filtering features are not divided into tiers anywhere in this document, `FEATURES.md`, or `UI_SYSTEM.md`. Inventing such a split without an explicit product decision would violate this document's "Claude Instructions" ("Never bypass business rules... never create hidden shortcuts" - applies equally to inventing rules that were never actually decided). A future phase must define the specific split before it can be enforced.
 
 ---
 

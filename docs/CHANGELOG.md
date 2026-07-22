@@ -878,3 +878,67 @@ Introduced the project's first Route Handler and its first external paid-service
 
 - `npm run typecheck`, `npm run lint`, `npm run test` (97 tests, 11 files, unchanged), and `npm run build` all pass. The build correctly collects `/api/webhooks/stripe` as a dynamic route without failing on the missing Stripe/service-role environment variables, confirming the lazy-construction design works as intended.
 - Not verified against a live Stripe project or live database in this environment - same persistent limitation as every phase since Phase 4. The Stripe SDK's actual type shapes (e.g. `current_period_end` living on `subscription.items.data[]`, not the top-level `Subscription` object, in SDK v22) were confirmed by inspecting the installed package's own type declarations, not by receiving a real webhook.
+
+---
+
+## Phase 24 — Plan Gating Enforcement (2026-07-21)
+
+Applied the Phase 23 subscription model to actually gate two existing MVP features behind the Pro plan, per `IMPLEMENTATION_ORDER_V2.md`. No Checkout, no Customer Portal, no payment UI, no subscription management beyond this - a Free plan user has no way to become Pro yet (that remains a later phase), so this enforcement is real but currently unreachable-to-bypass for every existing account, the same "infrastructure ahead of capability" situation Phase 23's webhook was already in.
+
+### Two clarifications requested and answered before implementation
+
+`VALUE_PROPOSITION.md` names "Unlimited applications" as Pro-only (implying a Free cap) and "Advanced analytics/filtering/insights" as Pro-only, but neither document specifies the actual Free-plan number, nor which parts of the single, undifferentiated Analytics page would count as "basic" vs "advanced." Per `IMPLEMENTATION_RULES.md` ("if documentation is incomplete: stop... never guess"), both were raised to the user before writing code:
+
+1. Free-plan application limit: **25**, confirmed by the user.
+2. Analytics/filtering tiering: **not gated this phase** (confirmed by the user) - inventing a basic/advanced split the docs never define would mean inventing functionality, and any locked-section treatment would itself be a form of payment UI, explicitly excluded this phase. Deferred to a future phase once the split is actually decided.
+
+### Added
+
+- `src/features/billing/constants/billing.constants.ts` - `FREE_PLAN_APPLICATION_LIMIT = 25`, the single source of truth for the number.
+- `BillingService` gained `requireProPlan(userId)` and `requireApplicationCapacity(userId)`, both returning the same `ActionResult<true>` allow/deny shape `AuthService.requireUserId` already established for authentication. All entitlement logic (reading `plan`, counting applications, comparing against the limit) lives here and only here - callers never inspect `plan` or count anything themselves.
+- `src/features/billing/services/billing.service.test.ts` - covers both guards: Free vs. Pro, at/under/over the limit, no subscription row, and repository failures.
+- Two new tests in the existing `export.service.test.ts` (see "Fixed" below) confirming a Free plan user is denied before any data is read.
+
+### Changed
+
+- `ApplicationService.create` now calls `BillingService.requireApplicationCapacity(userId)` first (`BUSINESS_RULES.md` "Billing" - Application Limit). The count is of active (non-archived) applications only, via `ApplicationRepository.countByStatuses(userId)` - the same generic, business-rule-free counting primitive `ApplicationStatsService` (a different feature's Service) already reuses for its own purposes, so no new counting mechanism was introduced.
+- `ExportService.exportCSV` and `.exportJSON` now call `BillingService.requireProPlan(userId)` first (`BUSINESS_RULES.md` "Billing" - Export). The Stripe webhook (`app/api/webhooks/stripe`, `BillingWebhookService`, `BillingWebhookRepository`) was not touched - no bug was found in it.
+- No new UI was added. Both gates return a business error through the existing `ActionResult` → toast pipeline every other business-rule rejection already uses (e.g. `CompanyService`'s duplicate-name rejection) - confirmed by inspecting `ExportMenu.tsx`'s existing `if (!result.success) toast.error(result.error.message)` handling, which needed no changes to correctly surface the new messages.
+
+### Fixed
+
+- `export.service.test.ts` (pre-existing, from an earlier phase) needed `BillingService` mocked once `ExportService` gained a new dependency on it - otherwise the real module chain loaded and failed on missing Supabase environment variables, the same category of fix `application-status.service.test.ts` needed during Phase 20.
+
+### Documentation updated
+
+- `BUSINESS_RULES.md` - "Billing" section finalized: the two enforced limits, and an explicit "Not Yet Enforced" note naming Analytics/filtering tiering as deliberately deferred rather than silently skipped. Also documents that entitlement is decided by `plan` alone (not `status`), and that this is currently unreachable since nothing sets `plan` to `pro` yet.
+- `API.md` - Create Application and both Export endpoints marked plan-gated, with the concrete limit/requirement stated.
+
+### Verification
+
+- `npm run typecheck`, `npm run lint`, `npm run test` (107 tests, 12 files - 10 new: `billing.service.test.ts`'s 9, plus 2 new Export-denial tests, minus none removed), and `npm run build` all pass.
+- Confirmed via `grep` that no other existing test file broke from the two new cross-feature imports (`ApplicationService`/`ExportService` → `BillingService`).
+- Not verified against a live database in this environment - same persistent limitation as every phase since Phase 4. Every scenario above was exercised through mocked repositories, not a live Supabase project.
+
+---
+
+## Phase 25 — Vercel Connection & External Monitoring (2026-07-21)
+
+Production-readiness review, per `IMPLEMENTATION_ORDER_V2.md`. Documentation only - no source file changed, no new dependency, no new service.
+
+### Reviewed
+
+- **Vercel connection.** `.github/workflows/ci.yml` already runs Type Check, Lint, Build, and Unit Tests on every push/PR to `main`, exactly matching `DEPLOYMENT.md`'s "Continuous Integration"/"Continuous Deployment" requirements - no gap found, no change needed. Connecting the GitHub repository to Vercel itself remains a manual, dashboard-side step this environment cannot perform (no Vercel account/dashboard access exists here) - unchanged status since Phase 18.
+- **External monitoring.** No document (`DEPLOYMENT.md`, `PROJECT_CONSTRAINTS.md`, or any other) names a monitoring vendor. Per this phase's explicit "if documentation is incomplete or ambiguous, stop and ask - never guess" instruction, this was raised to the user before writing any code, since introducing one would mean a new paid dependency requiring approval and real credentials this environment cannot obtain.
+
+### Decision
+
+The user chose to defer external monitoring entirely this phase, rather than naming a vendor now. Vercel Logs/Supabase Logs/Browser Console remain the tooling, unchanged from the MVP. No `lib/monitoring.ts` was created, no dependency was installed. Revisit once a specific vendor is chosen.
+
+### Documentation updated
+
+- `DEPLOYMENT.md` - "Continuous Deployment" section notes CI is confirmed sufficient and the Vercel connection remains outstanding; "Monitoring" section notes the deferral and why.
+
+### Verification
+
+- No source file changed. `npm run typecheck`, `npm run lint`, `npm run test` (107 tests, 12 files, unchanged), and `npm run build` re-run to confirm nothing regressed - all pass, identical to Phase 24's results.

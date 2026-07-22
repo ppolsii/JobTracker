@@ -1,6 +1,7 @@
 import { ApplicationNoteService } from "@/features/applications/services/application-note.service";
 import { ApplicationStatusService } from "@/features/applications/services/application-status.service";
 import { ApplicationService } from "@/features/applications/services/application.service";
+import { BillingService } from "@/features/billing/services/billing.service";
 import { CompanyService } from "@/features/companies/services/company.service";
 import { CVVersionService } from "@/features/cv/services/cv-version.service";
 import { buildApplicationsCsv } from "@/features/export/utils/export-csv";
@@ -28,6 +29,11 @@ export const ExportService = {
   // the Applications list page), status history entry, and note the user
   // owns - including anything archived.
   async exportJSON(userId: string): Promise<ActionResult<string>> {
+    // BUSINESS_RULES.md "Billing": Export requires Pro. BillingService owns
+    // this decision entirely - this Service never inspects plan itself.
+    const plan = await BillingService.requireProPlan(userId);
+    if (!plan.success) return plan;
+
     const [companiesResult, cvVersionsResult, applicationsResult, notesResult] =
       await Promise.all([
         CompanyService.listAllIncludingArchived(userId),
@@ -69,6 +75,9 @@ export const ExportService = {
   // `API.md`/`BUSINESS_RULES.md` have been corrected to describe this scope
   // explicitly, rather than implying CSV mirrors JSON's full account bundle.
   async exportCSV(userId: string): Promise<ActionResult<string>> {
+    const plan = await BillingService.requireProPlan(userId);
+    if (!plan.success) return plan;
+
     const applicationsResult =
       await ApplicationService.listAllIncludingArchived(userId);
 

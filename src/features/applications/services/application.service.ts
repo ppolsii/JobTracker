@@ -9,6 +9,7 @@ import type {
   ApplicationWithRelations,
 } from "@/features/applications/types/application.types";
 import { DEFAULT_CURRENCY } from "@/features/applications/constants/application.constants";
+import { BillingService } from "@/features/billing/services/billing.service";
 import { CompanyRepository } from "@/features/companies/repositories/company.repository";
 import { CVVersionRepository } from "@/features/cv/repositories/cv-version.repository";
 import { ERROR_CODES } from "@/shared/constants/error-codes";
@@ -87,6 +88,12 @@ export const ApplicationService = {
     userId: string,
     input: CreateApplicationInput
   ): Promise<ActionResult<Application>> {
+    // BUSINESS_RULES.md "Billing": Free plan is limited to a maximum number
+    // of active applications. BillingService owns this decision entirely -
+    // this Service never inspects plan or counts anything itself.
+    const capacity = await BillingService.requireApplicationCapacity(userId);
+    if (!capacity.success) return capacity;
+
     const validation = await validateReferences(
       userId,
       input.company_id,

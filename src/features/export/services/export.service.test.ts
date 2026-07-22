@@ -3,10 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import { ApplicationNoteService } from "@/features/applications/services/application-note.service";
 import { ApplicationStatusService } from "@/features/applications/services/application-status.service";
 import { ApplicationService } from "@/features/applications/services/application.service";
+import { BillingService } from "@/features/billing/services/billing.service";
 import { CompanyService } from "@/features/companies/services/company.service";
 import { CVVersionService } from "@/features/cv/services/cv-version.service";
 import { ExportService } from "@/features/export/services/export.service";
 
+vi.mock("@/features/billing/services/billing.service", () => ({
+  BillingService: { requireProPlan: vi.fn() },
+}));
 vi.mock("@/features/companies/services/company.service", () => ({
   CompanyService: { listAllIncludingArchived: vi.fn() },
 }));
@@ -23,6 +27,7 @@ vi.mock("@/features/applications/services/application-status.service", () => ({
   ApplicationStatusService: { listHistoryForApplications: vi.fn() },
 }));
 
+const mockedBilling = vi.mocked(BillingService);
 const mockedCompanies = vi.mocked(CompanyService);
 const mockedCvVersions = vi.mocked(CVVersionService);
 const mockedApplications = vi.mocked(ApplicationService);
@@ -30,6 +35,10 @@ const mockedNotes = vi.mocked(ApplicationNoteService);
 const mockedStatusHistory = vi.mocked(ApplicationStatusService);
 
 function setUpSuccessfulMocks() {
+  mockedBilling.requireProPlan.mockResolvedValue({
+    success: true,
+    data: true,
+  } as never);
   mockedCompanies.listAllIncludingArchived.mockResolvedValue({
     success: true,
     data: [{ id: "c1", name: "Acme" }],
@@ -118,10 +127,26 @@ describe("ExportService.exportJSON", () => {
 
     expect(result.success).toBe(false);
   });
+
+  it("denies export for a Free plan user before reading any data (BUSINESS_RULES.md 'Billing')", async () => {
+    mockedBilling.requireProPlan.mockResolvedValue({
+      success: false,
+      error: { message: "This feature requires a Pro plan.", code: "FORBIDDEN" },
+    } as never);
+
+    const result = await ExportService.exportJSON("user-1");
+
+    expect(result.success).toBe(false);
+    expect(mockedCompanies.listAllIncludingArchived).not.toHaveBeenCalled();
+  });
 });
 
 describe("ExportService.exportCSV", () => {
   it("uses the archived-inclusive application read, not the paginated list", async () => {
+    mockedBilling.requireProPlan.mockResolvedValue({
+      success: true,
+      data: true,
+    } as never);
     mockedApplications.listAllIncludingArchived.mockResolvedValue({
       success: true,
       data: [],
@@ -132,5 +157,17 @@ describe("ExportService.exportCSV", () => {
     expect(mockedApplications.listAllIncludingArchived).toHaveBeenCalledWith(
       "user-1"
     );
+  });
+
+  it("denies export for a Free plan user before reading any data (BUSINESS_RULES.md 'Billing')", async () => {
+    mockedBilling.requireProPlan.mockResolvedValue({
+      success: false,
+      error: { message: "This feature requires a Pro plan.", code: "FORBIDDEN" },
+    } as never);
+
+    const result = await ExportService.exportCSV("user-1");
+
+    expect(result.success).toBe(false);
+    expect(mockedApplications.listAllIncludingArchived).not.toHaveBeenCalled();
   });
 });

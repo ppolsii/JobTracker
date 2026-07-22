@@ -73,6 +73,10 @@ Description
 
 Creates a new job application.
 
+Plan-gated (Version 2, Phase 24)
+
+Free plan: rejected once the user has 25 active applications (`BUSINESS_RULES.md` "Billing"). Pro plan: unlimited.
+
 Required fields
 
 - company_id
@@ -530,6 +534,8 @@ Case insensitive.
 ---
 
 # Export
+
+Plan-gated (Version 2, Phase 24): both endpoints below require the Pro plan (`BUSINESS_RULES.md` "Billing"). A Free plan user receives 403 Forbidden.
 
 GET
 
