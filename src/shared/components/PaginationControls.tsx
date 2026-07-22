@@ -32,6 +32,7 @@ export function PaginationControls({
           <Button
             variant="outline"
             size="sm"
+            nativeButton={false}
             render={<Link href={buildHref(page - 1)} />}
           >
             Previous
@@ -45,6 +46,7 @@ export function PaginationControls({
           <Button
             variant="outline"
             size="sm"
+            nativeButton={false}
             render={<Link href={buildHref(page + 1)} />}
           >
             Next

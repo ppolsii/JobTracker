@@ -95,6 +95,7 @@ export function ApplicationsTable({
               variant="ghost"
               size="icon-sm"
               aria-label={`View ${a.position}`}
+              nativeButton={false}
               render={<Link href={applicationDetailRoute(a.id)} />}
             >
               <Eye className="size-4" />

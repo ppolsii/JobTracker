@@ -70,6 +70,7 @@ export default async function ApplicationsPage({
           {archived ? (
             <Button
               variant="outline"
+              nativeButton={false}
               render={<Link href={ROUTES.APPLICATIONS} />}
             >
               Back to active
@@ -78,6 +79,7 @@ export default async function ApplicationsPage({
             <>
               <Button
                 variant="ghost"
+                nativeButton={false}
                 render={<Link href={`${ROUTES.APPLICATIONS}?archived=true`} />}
               >
                 <Archive className="size-4" />

@@ -55,6 +55,7 @@ export default async function CVVersionsPage({
           {archived ? (
             <Button
               variant="outline"
+              nativeButton={false}
               render={<Link href={ROUTES.CV_VERSIONS} />}
             >
               Back to active
@@ -63,6 +64,7 @@ export default async function CVVersionsPage({
             <>
               <Button
                 variant="ghost"
+                nativeButton={false}
                 render={<Link href={`${ROUTES.CV_VERSIONS}?archived=true`} />}
               >
                 <Archive className="size-4" />

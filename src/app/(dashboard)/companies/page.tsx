@@ -55,13 +55,18 @@ export default async function CompaniesPage({
         </h2>
         <div className="flex items-center gap-2">
           {archived ? (
-            <Button variant="outline" render={<Link href={ROUTES.COMPANIES} />}>
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={<Link href={ROUTES.COMPANIES} />}
+            >
               Back to active
             </Button>
           ) : (
             <>
               <Button
                 variant="ghost"
+                nativeButton={false}
                 render={<Link href={`${ROUTES.COMPANIES}?archived=true`} />}
               >
                 <Archive className="size-4" />

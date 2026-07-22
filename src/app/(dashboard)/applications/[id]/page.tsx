@@ -99,6 +99,7 @@ export default async function ApplicationDetailPage({
             variant="ghost"
             size="icon-sm"
             aria-label="Back to applications"
+            nativeButton={false}
             render={<Link href={ROUTES.APPLICATIONS} />}
           >
             <ArrowLeft className="size-4" />
