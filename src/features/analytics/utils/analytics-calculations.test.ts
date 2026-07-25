@@ -30,6 +30,7 @@ function app(
   return {
     company_id: "company-1",
     cv_version_id: "cv-1",
+    position: "Backend Engineer",
     source: null,
     work_mode: null,
     employment_type: null,
@@ -37,6 +38,9 @@ function app(
     current_status: "Applied",
     companies: { name: "Acme" },
     cv_versions: { name: "Backend CV" },
+    salary_min: null,
+    salary_max: null,
+    currency: null,
     ...overrides,
   };
 }
@@ -187,6 +191,8 @@ describe("computeGroupAnalytics", () => {
           respondedAt: "2026-01-04T00:00:00.000Z",
           offerEnteredAt: null,
           acceptedEnteredAt: null,
+          recruiterContactEnteredAt: null,
+          firstInterviewEnteredAt: null,
           enteredStatuses: new Set<AnalyticsApplicationRow["current_status"]>(),
           rejectedFromStage: null,
         },

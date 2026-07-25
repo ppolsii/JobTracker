@@ -384,6 +384,46 @@ Nullable
 
 ---
 
+file_path
+
+text
+
+Nullable
+
+Version 2, Phase 40 (CV Library). The object key inside the private `cv-files` Supabase Storage bucket - always `"<user_id>/<id>.pdf"`, generated server-side, never supplied by the client. Nullable because every CV version created before this phase has no file yet; those rows remain fully valid (all existing relationships unchanged), just without a downloadable file until re-uploaded.
+
+---
+
+file_name
+
+text
+
+Nullable
+
+Version 2, Phase 40. The original uploaded filename (e.g. "Backend_Resume_2026.pdf"), shown in the CV Library and used as the downloaded file's name.
+
+---
+
+file_size
+
+bigint
+
+Nullable
+
+Version 2, Phase 40. Bytes, as reported by the upload. Capped at 5 MB by both the storage bucket's own `file_size_limit` and `CVVersionService`'s `validateCVFile` (see ARCHITECTURE.md "Business Rule Ownership" - the same rule is enforced in exactly one Service, the bucket limit is defense in depth only).
+
+---
+
+uploaded_at
+
+timestamp
+
+Nullable
+
+Version 2, Phase 40. Set whenever a file is uploaded or replaced - distinct from `updated_at`, which also changes on a metadata-only edit (name/description) that doesn't touch the file.
+
+---
+
 created_at
 
 timestamp
@@ -407,6 +447,32 @@ Constraints
 (user_id, name)
 
 must be unique.
+
+---
+
+# Storage
+
+Version 2, Phase 40 (CV Library): supersedes this document's previous statement that "the MVP does not require file uploads" (see DEPLOYMENT.md's own updated "File Storage" section for the full setup). One private Supabase Storage bucket, `cv-files`, holds every user's CV PDFs.
+
+Bucket
+
+cv-files (private, not public)
+
+Object key
+
+`<user_id>/<cv_version_id>.pdf` - always derived server-side, never client-supplied
+
+Access
+
+No public URL. Every download goes through a signed URL (`CVVersionService.getDownloadUrl`), minted only after the caller's ownership of that CV version row is verified - the same "never trust the client, verify ownership" rule this document's RLS policies already enforce for every table.
+
+RLS
+
+`storage.objects` has one policy scoped to `bucket_id = 'cv-files'`, requiring the object key's leading path segment to equal `auth.uid()` - functionally identical to every table's own `user_id = auth.uid()` policy, just expressed against Storage instead of a table.
+
+Constraints
+
+PDF only (`application/pdf`), 5 MB maximum - enforced by the bucket's own `file_size_limit`/`allowed_mime_types` and, independently, by `CVVersionService.create`/`update` before ever calling Storage.
 
 ---
 
@@ -714,7 +780,7 @@ Tables introduced after the MVP. Documented separately so the "Tables"/"Foreign 
 
 # subscriptions
 
-Version 2, Phase 23 (`IMPLEMENTATION_ORDER_V2.md`) - infrastructure only. Every user has exactly one row, created automatically at signup (`handle_new_user`). No feature reads this table to gate access yet; `plan` is never written beyond its `free` default until a future phase decides how it should be derived.
+Version 2, Phase 23 (`IMPLEMENTATION_ORDER_V2.md`) established this table as infrastructure only. Phase 38 (Production Billing) is what actually writes `plan`/`status`/`billing_interval`/`cancel_at`/`latest_invoice_id` beyond their defaults, via the Stripe webhook - see `BillingWebhookService`. Every user still has exactly one row, created automatically at signup (`handle_new_user`).
 
 Columns
 
@@ -740,7 +806,7 @@ plan
 
 enum (`subscription_plan`)
 
-Required. Default `free`. Not written by anything beyond its default in Phase 23.
+Required. Default `free`. Derived from Stripe's own subscription `status` by `BillingWebhookService` (`trialing`/`active`/`past_due` -> `pro`; every other status -> `free`) - the only place this derivation happens (`BUSINESS_RULES.md` "Billing").
 
 ---
 
@@ -756,7 +822,7 @@ stripe_customer_id
 
 text
 
-Nullable. Unique.
+Nullable. Unique. First linked to this row by `checkout.session.completed` (via the Checkout Session's `client_reference_id`, set to this user's id when the session was created) - see `BillingWebhookRepository.linkStripeCustomer`.
 
 ---
 
@@ -772,7 +838,31 @@ current_period_end
 
 timestamp
 
-Nullable.
+Nullable. The "Renewal Date" - read from the subscription's first item (`items.data[0].current_period_end`, Stripe's current API shape).
+
+---
+
+billing_interval
+
+enum (`subscription_billing_interval`)
+
+Nullable. Version 2, Phase 38. Mirrors the subscribed price's own `recurring.interval` (`month` or `year`) - the two intervals this application actually sells (Pro Monthly/Pro Yearly).
+
+---
+
+cancel_at
+
+timestamp
+
+Nullable. Version 2, Phase 38. The "Cancellation Date" - Stripe's `cancel_at` (scheduled-to-cancel) if set, else `canceled_at` (already ended) if set, else null. A non-null value with `status` still `active`/`trialing`/`past_due` means the subscription is scheduled to end on this date but hasn't yet (the Subscription section's UI shows this as "Ends on" instead of "Renewal date").
+
+---
+
+latest_invoice_id
+
+text
+
+Nullable. Version 2, Phase 38. Set by `invoice.payment_succeeded`/`invoice.payment_failed` (and refreshed by every subscription sync, which also carries the subscription's own `latest_invoice`) - kept for reference/support, not for any entitlement decision (that stays `status`/`plan` alone, "never duplicate data already managed elsewhere").
 
 ---
 
@@ -793,6 +883,40 @@ Constraints
 Row Level Security
 
 Users may only `select` their own row (`user_id = auth.uid()`). No `insert`/`update`/`delete` policy or grant exists for `authenticated` - a user must never be able to set their own plan/status directly. The only writers are the `handle_new_user` trigger (the genesis row) and the billing webhook (`app/api/webhooks/stripe`), which uses the Supabase service-role client - see `ARCHITECTURE.md` "Repositories" for why an authenticated-user RLS policy could not safely allow that write instead.
+
+---
+
+# stripe_webhook_events
+
+Version 2, Phase 38 (Production Billing) - a webhook idempotency log ("WEBHOOKS": "All webhook handlers must be idempotent"). Holds no user data; only the Supabase service-role client (via `BillingWebhookRepository`) ever reads or writes it.
+
+Columns
+
+id
+
+text
+
+Primary Key. The Stripe event's own `id` (e.g. `evt_...`) - its uniqueness is what makes a duplicate delivery detectable.
+
+---
+
+type
+
+text
+
+The Stripe event type (e.g. `customer.subscription.updated`) - kept for debugging/audit only.
+
+---
+
+created_at
+
+timestamp
+
+When this event was recorded - always *after* it was fully, successfully processed (never before), so a failed attempt is never mistaken for an already-handled duplicate and remains retryable on Stripe's next delivery.
+
+Row Level Security
+
+Enabled, with no policy and no grant to `authenticated` - this table is never read or written by anything except the service-role client.
 
 ---
 
@@ -872,6 +996,274 @@ Users may `select`/`insert`/`update` rows where `user_id = auth.uid()`. `insert`
 
 ---
 
+# calendar_events
+
+Version 2, Phase 34 (`IMPLEMENTATION_ORDER_V2.md`) - stores only the two user-created Calendar event types (Reminder, Custom Event). Every other Calendar event type (Application Submitted, Recruiter Contact, Interview, Technical Interview, Final Interview, Offer Received, Offer Accepted, Offer Rejected, Rejected) is derived at read time from `application_status_history` and has no row here.
+
+Same hybrid-ownership shape as `interview_feedback`: its own `user_id` column, so RLS and `CalendarEventRepository` both filter on it directly, plus an ownership check on the optional `application_id` link.
+
+Columns
+
+id
+
+uuid
+
+---
+
+user_id
+
+uuid
+
+FK users
+
+---
+
+application_id
+
+uuid
+
+Nullable. FK applications. A Reminder/Custom Event need not be tied to an application.
+
+---
+
+type
+
+enum (`calendar_event_type`)
+
+---
+
+title
+
+text
+
+Required.
+
+---
+
+description
+
+text
+
+Nullable.
+
+---
+
+event_date
+
+date
+
+Required.
+
+---
+
+created_at
+
+timestamp
+
+---
+
+updated_at
+
+timestamp
+
+---
+
+deleted_at
+
+timestamp
+
+Row Level Security
+
+Users may `select`/`insert`/`update` rows where `user_id = auth.uid()`. `insert`/`update` additionally require that, when `application_id` is set, it belongs to an application owned by that same user (`application_id is null or exists (...)`). No `delete` policy or grant exists - soft delete only (`deleted_at`), matching every other business entity.
+
+---
+
+# goals
+
+Version 2, Phase 35 (`IMPLEMENTATION_ORDER_V2.md`) - a user-defined target (e.g. "5 applications per week"). Progress itself is never stored here - `GoalService` always computes it live from `applications`/`application_status_history`, the same bulk data Analytics/Advanced Analytics/Calendar already read. Only the goal's own definition and status persist.
+
+Columns
+
+id
+
+uuid
+
+---
+
+user_id
+
+uuid
+
+FK users
+
+---
+
+metric
+
+enum (`goal_metric`)
+
+One of `applications`, `interviews`, `offers`, `recruiter_contacts`. A future `custom` metric is deliberately not included this phase (`ALTER TYPE ... ADD VALUE` later, no restructuring needed).
+
+---
+
+period
+
+enum (`goal_period`)
+
+One of `weekly`, `monthly`, `quarterly`, `yearly` (each recurs - progress resets every new period) or `total` (cumulative, never resets).
+
+---
+
+target_value
+
+integer
+
+Required. Must be greater than zero (`goals_target_value_positive` check constraint).
+
+---
+
+title
+
+text
+
+Nullable. Falls back to a derived label (e.g. "Applications - Weekly") in the application layer when absent.
+
+---
+
+status
+
+enum (`goal_status`)
+
+Default `active`. One of `active`, `paused`, `archived`.
+
+---
+
+completed_at
+
+timestamp
+
+Nullable. Only ever set for `period = 'total'` goals, once, the first time their cumulative progress reaches `target_value` - a recurring goal's periods reset forever and so never set this column.
+
+---
+
+created_at
+
+timestamp
+
+---
+
+updated_at
+
+timestamp
+
+---
+
+deleted_at
+
+timestamp
+
+Row Level Security
+
+Users may `select`/`insert`/`update` rows where `user_id = auth.uid()`. No `delete` policy or grant exists - "Delete" (the user-facing action) is a soft delete via `deleted_at`, distinct from `status = 'archived'` (still a real, selectable row) - the two are deliberately different operations.
+
+---
+
+# user_achievements
+
+Version 2, Phase 35 - a permanent, append-only unlock log. Achievements themselves (key, label, description, unlock condition) are defined in code (`goal.constants.ts`'s `ACHIEVEMENT_DEFINITIONS`/`achievement-calculations.ts`), never in the database - this table only records *that* a given user unlocked a given key, and *when*.
+
+Columns
+
+id
+
+uuid
+
+---
+
+user_id
+
+uuid
+
+FK users
+
+---
+
+achievement_key
+
+text
+
+Matches an `ACHIEVEMENT_DEFINITIONS` key - not a FK, since the catalog lives in code, not a database table.
+
+---
+
+unlocked_at
+
+timestamp
+
+Row Level Security
+
+Users may `select`/`insert` rows where `user_id = auth.uid()`. No `update`/`delete` policy or grant exists - achievements unlock automatically and permanently; there is no action that edits or revokes one. A `unique (user_id, achievement_key)` constraint makes a duplicate unlock attempt fail safely (23505), which `AchievementService` treats as "already unlocked," not an error.
+
+---
+
+# notification_states
+
+Version 2, Phase 36 (`IMPLEMENTATION_ORDER_V2.md`) - Notification Center & Smart Reminders. Notification *content* is never stored: every notification (stale application, interview reminder, goal progress, achievement unlock, calendar event) is generated live, on every read, by `NotificationService` from data this application already has (reusing `CalendarService`/`GoalService`/`AchievementService` wholesale). This table only records a user's own interaction - read, archived, or deleted - with a given, deterministically-keyed notification, so regenerating the list on every page load never creates duplicate state and always reattaches the right one.
+
+Columns
+
+id
+
+uuid
+
+---
+
+user_id
+
+uuid
+
+FK users
+
+---
+
+notification_key
+
+text
+
+A deterministic string derived entirely from the underlying condition (e.g. `application:no_activity:<application_id>`, `achievement:unlocked:<achievement_key>`) - never a random id, so the same logical notification always maps to the same key across regenerations. Not a FK - the notification catalog lives in code (`notification-calculations.ts`), not a database table.
+
+---
+
+status
+
+enum (`notification_status`)
+
+Default `unread`. One of `unread`, `read`, `archived`.
+
+---
+
+created_at
+
+timestamp
+
+---
+
+updated_at
+
+timestamp
+
+---
+
+deleted_at
+
+timestamp
+
+Row Level Security
+
+Users may `select`/`insert`/`update` rows where `user_id = auth.uid()`. No `delete` policy or grant exists - "Delete notification"/"Delete all read" are soft deletes via `deleted_at` (BUSINESS_RULES.md "Soft Deletes"), matching every other business entity; "Archive notification" is the distinct `status = 'archived'` value `update` already handles. A `unique (user_id, notification_key)` constraint makes every write an idempotent upsert.
+
+---
+
 # Enums
 
 work_mode
@@ -944,6 +1336,14 @@ pro
 
 ---
 
+subscription_billing_interval (Version 2, Phase 38)
+
+month
+
+year
+
+---
+
 subscription_status (Version 2, Phase 23)
 
 Mirrors Stripe's own `Subscription.status` values exactly.
@@ -977,6 +1377,60 @@ On-site
 Technical
 
 Behavioral
+
+---
+
+calendar_event_type (Version 2, Phase 34)
+
+reminder
+
+custom
+
+---
+
+goal_metric (Version 2, Phase 35)
+
+applications
+
+interviews
+
+offers
+
+recruiter_contacts
+
+---
+
+goal_period (Version 2, Phase 35)
+
+weekly
+
+monthly
+
+quarterly
+
+yearly
+
+total
+
+---
+
+goal_status (Version 2, Phase 35)
+
+active
+
+paused
+
+archived
+
+---
+
+notification_status (Version 2, Phase 36)
+
+unread
+
+read
+
+archived
 
 ---
 

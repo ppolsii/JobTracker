@@ -10,6 +10,7 @@ vi.mock("@/features/interview-feedback/repositories/interview-feedback.repositor
   InterviewFeedbackRepository: {
     create: vi.fn(),
     listByHistoryIds: vi.fn(),
+    listAllForUser: vi.fn(),
     update: vi.fn(),
     archive: vi.fn(),
   },
@@ -169,6 +170,52 @@ describe("InterviewFeedbackService.listForApplication", () => {
       "history-1",
       "history-2",
     ]);
+  });
+});
+
+describe("InterviewFeedbackService.listAllForUser", () => {
+  // IMPLEMENTATION_ORDER_V2.md Phase 34 (Calendar & Timeline): backs the
+  // Calendar page's bulk feedback read, mirroring listForApplication's
+  // error-mapping behaviour but with no ownership resolution step needed
+  // (interview_feedback has its own user_id column).
+  it("returns every feedback row for the user, defaulting to an empty list", async () => {
+    mockedRepository.listAllForUser.mockResolvedValue({
+      data: [{ id: "feedback-1" }, { id: "feedback-2" }],
+      error: null,
+    } as never);
+
+    const result = await InterviewFeedbackService.listAllForUser("user-1");
+
+    expect(result).toEqual({
+      success: true,
+      data: [{ id: "feedback-1" }, { id: "feedback-2" }],
+    });
+    expect(mockedRepository.listAllForUser).toHaveBeenCalledWith("user-1");
+  });
+
+  it("returns an Internal Error when the repository read fails", async () => {
+    mockedRepository.listAllForUser.mockResolvedValue({
+      data: null,
+      error: { message: "db down" },
+    } as never);
+
+    const result = await InterviewFeedbackService.listAllForUser("user-1");
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    }
+  });
+
+  it("defaults to an empty array when data is null but there is no error", async () => {
+    mockedRepository.listAllForUser.mockResolvedValue({
+      data: null,
+      error: null,
+    } as never);
+
+    const result = await InterviewFeedbackService.listAllForUser("user-1");
+
+    expect(result).toEqual({ success: true, data: [] });
   });
 });
 

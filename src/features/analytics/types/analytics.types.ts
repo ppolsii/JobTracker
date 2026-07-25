@@ -103,6 +103,11 @@ export interface TrendAnalysis {
 }
 
 export interface AnalyticsSummary {
+  // Bug fix follow-up (UX Refinement phase): lets the page distinguish "the
+  // user genuinely has zero applications yet" (an expected, empty state)
+  // from every other case, without inferring it indirectly from a nested
+  // rate metric's sampleSize - explicit, not implicit.
+  totalApplications: number;
   overview: AnalyticsOverview;
   companyAnalytics: GroupAnalyticsRow[];
   cvAnalytics: GroupAnalyticsRow[];

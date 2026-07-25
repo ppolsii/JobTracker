@@ -15,8 +15,10 @@ function todayISODate(): string {
 // Shared by createApplicationSchema and changeApplicationStatusSchema (the
 // Wishlist -> Applied transition also collects this field - see
 // ApplicationStatusService.changeStatus) - one definition, not reimplemented
-// per schema.
-const applicationDateField = z
+// per schema. Exported (Phase 32 - Smart Job Import) so the import review
+// form's schema can reuse the exact same date validation instead of
+// duplicating it.
+export const applicationDateField = z
   .string()
   .trim()
   .refine((value) => value === "" || !Number.isNaN(Date.parse(value)), {
@@ -24,7 +26,7 @@ const applicationDateField = z
   })
   .optional();
 
-function refineDateNotInFuture<T extends { application_date?: string }>(
+export function refineDateNotInFuture<T extends { application_date?: string }>(
   data: T
 ): boolean {
   return !data.application_date || data.application_date <= todayISODate();
@@ -75,6 +77,35 @@ export const createApplicationSchema = z
     path: ["application_date"],
   });
 export type CreateApplicationInput = z.infer<typeof createApplicationSchema>;
+
+// IMPLEMENTATION_ORDER_V2.md Phase 40 "SALARY": ApplicationForm's own
+// client-side validation shape - a single `salary` field instead of
+// salary_min/salary_max. Deliberately a separate schema from
+// createApplicationSchema above (not `.omit`/`.extend` on it, which is a
+// ZodEffects after its `.refine` calls) rather than reworking the
+// server/Service-facing schema, which still validates and stores
+// salary_min/salary_max unchanged - ApplicationForm itself maps `salary` to
+// both before calling the existing create/update Server Actions, so no
+// Service, Repository, or column changes anywhere else.
+export const applicationFormSchema = z
+  .object({
+    company_id: z.string().uuid("Select a company."),
+    cv_version_id: z.string().uuid("Select a CV version."),
+    position: z.string().trim().min(1, "Position is required.").max(255),
+    application_date: applicationDateField,
+    job_url: z.string().trim().max(2048).optional(),
+    location: z.string().trim().max(255).optional(),
+    work_mode: z.enum(WORK_MODE_OPTIONS).optional(),
+    employment_type: z.enum(EMPLOYMENT_TYPE_OPTIONS).optional(),
+    source: z.enum(APPLICATION_SOURCE_OPTIONS).optional(),
+    salary: z.coerce.number().int().nonnegative().optional(),
+    currency: z.string().trim().max(10, "Currency code is too long.").optional(),
+  })
+  .refine(refineDateNotInFuture, {
+    message: "Application date cannot be in the future.",
+    path: ["application_date"],
+  });
+export type ApplicationFormInput = z.infer<typeof applicationFormSchema>;
 
 export const updateApplicationSchema = createApplicationSchema.and(
   z.object({ id: z.string().uuid() })

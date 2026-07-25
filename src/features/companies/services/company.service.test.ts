@@ -129,6 +129,93 @@ describe("CompanyService.update", () => {
   });
 });
 
+describe("CompanyService.findOrCreateByName", () => {
+  it("returns the existing active company's id without creating anything", async () => {
+    mockedRepository.findActiveByName.mockResolvedValue({
+      data: { id: "existing-id" },
+      error: null,
+    } as never);
+
+    const result = await CompanyService.findOrCreateByName("user-1", "Acme");
+
+    expect(result).toEqual({ success: true, data: { id: "existing-id" } });
+    expect(mockedRepository.create).not.toHaveBeenCalled();
+  });
+
+  it("creates a new company when no active one matches the name", async () => {
+    mockedRepository.findActiveByName.mockResolvedValue({
+      data: null,
+      error: null,
+    } as never);
+    mockedRepository.create.mockResolvedValue({
+      data: { id: "new-id", name: "Acme" },
+      error: null,
+    } as never);
+
+    const result = await CompanyService.findOrCreateByName("user-1", "Acme");
+
+    expect(result).toEqual({ success: true, data: { id: "new-id" } });
+    expect(mockedRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ user_id: "user-1", name: "Acme" })
+    );
+  });
+
+  it("resolves to the winning row instead of surfacing a conflict when a concurrent request created the same name first", async () => {
+    // Three findActiveByName calls in sequence: findOrCreateByName's own
+    // pre-check, then CompanyService.create's own internal pre-check (both
+    // miss the race), and finally findOrCreateByName's retry after create()
+    // itself hits the unique-index violation.
+    mockedRepository.findActiveByName
+      .mockResolvedValueOnce({ data: null, error: null } as never)
+      .mockResolvedValueOnce({ data: null, error: null } as never)
+      .mockResolvedValueOnce({ data: { id: "winner-id" }, error: null } as never);
+    mockedRepository.create.mockResolvedValue({
+      data: null,
+      error: { code: POSTGRES_ERROR_CODES.UNIQUE_VIOLATION },
+    } as never);
+
+    const result = await CompanyService.findOrCreateByName("user-1", "Acme");
+
+    expect(result).toEqual({ success: true, data: { id: "winner-id" } });
+  });
+
+  it("trims the name before searching or creating", async () => {
+    mockedRepository.findActiveByName.mockResolvedValue({
+      data: null,
+      error: null,
+    } as never);
+    mockedRepository.create.mockResolvedValue({
+      data: { id: "new-id", name: "Acme" },
+      error: null,
+    } as never);
+
+    await CompanyService.findOrCreateByName("user-1", "  Acme  ");
+
+    expect(mockedRepository.findActiveByName).toHaveBeenCalledWith(
+      "user-1",
+      "Acme"
+    );
+  });
+
+  it("propagates a genuine creation failure (not a name conflict) unchanged", async () => {
+    mockedRepository.findActiveByName.mockResolvedValue({
+      data: null,
+      error: null,
+    } as never);
+    mockedRepository.create.mockResolvedValue({
+      data: null,
+      error: { code: "OTHER" },
+    } as never);
+
+    const result = await CompanyService.findOrCreateByName("user-1", "Acme");
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    }
+  });
+});
+
 describe("CompanyService.archive", () => {
   it("blocks archiving a company referenced by active applications (BUSINESS_RULES.md 'Company Rules')", async () => {
     mockedRepository.countActiveApplications.mockResolvedValue({

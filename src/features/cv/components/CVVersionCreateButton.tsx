@@ -13,7 +13,7 @@ export function CVVersionCreateButton() {
     <>
       <Button type="button" onClick={() => setOpen(true)}>
         <Plus className="size-4" />
-        Create CV version
+        Upload a CV
       </Button>
       <CVVersionFormDialog open={open} onOpenChange={setOpen} />
     </>

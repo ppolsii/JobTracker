@@ -153,3 +153,92 @@ describe("BillingService.requireApplicationCapacity", () => {
     }
   });
 });
+
+describe("BillingService.getApplicationUsage", () => {
+  it("returns the active count and the Free plan limit for a Free plan user", async () => {
+    mockedBilling.getByUserId.mockResolvedValue({
+      data: subscriptionRow({ plan: "free" }),
+      error: null,
+    } as never);
+    mockedApplications.countByStatuses.mockResolvedValue({
+      count: 8,
+      error: null,
+    } as never);
+
+    const result = await BillingService.getApplicationUsage("user-1");
+
+    expect(result).toEqual({
+      success: true,
+      data: { used: 8, limit: FREE_PLAN_APPLICATION_LIMIT },
+    });
+  });
+
+  it("returns a null limit for a Pro plan user, but still reports actual usage", async () => {
+    mockedBilling.getByUserId.mockResolvedValue({
+      data: subscriptionRow({ plan: "pro" }),
+      error: null,
+    } as never);
+    mockedApplications.countByStatuses.mockResolvedValue({
+      count: 42,
+      error: null,
+    } as never);
+
+    const result = await BillingService.getApplicationUsage("user-1");
+
+    expect(result).toEqual({
+      success: true,
+      data: { used: 42, limit: null },
+    });
+  });
+
+  it("defaults used to zero when the count query returns no count", async () => {
+    mockedBilling.getByUserId.mockResolvedValue({
+      data: subscriptionRow({ plan: "free" }),
+      error: null,
+    } as never);
+    mockedApplications.countByStatuses.mockResolvedValue({
+      count: null,
+      error: null,
+    } as never);
+
+    const result = await BillingService.getApplicationUsage("user-1");
+
+    expect(result).toEqual({
+      success: true,
+      data: { used: 0, limit: FREE_PLAN_APPLICATION_LIMIT },
+    });
+  });
+
+  it("returns an internal error when the application count query fails", async () => {
+    mockedBilling.getByUserId.mockResolvedValue({
+      data: subscriptionRow({ plan: "free" }),
+      error: null,
+    } as never);
+    mockedApplications.countByStatuses.mockResolvedValue({
+      count: null,
+      error: { message: "db error" },
+    } as never);
+
+    const result = await BillingService.getApplicationUsage("user-1");
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    }
+  });
+
+  it("propagates a subscription lookup failure", async () => {
+    mockedBilling.getByUserId.mockResolvedValue({
+      data: null,
+      error: { message: "db error" },
+    } as never);
+
+    const result = await BillingService.getApplicationUsage("user-1");
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    }
+    expect(mockedApplications.countByStatuses).not.toHaveBeenCalled();
+  });
+});

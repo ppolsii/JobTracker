@@ -87,6 +87,10 @@ export type Database = {
           user_id: string;
           name: string;
           description: string | null;
+          file_path: string | null;
+          file_name: string | null;
+          file_size: number | null;
+          uploaded_at: string | null;
           created_at: string;
           updated_at: string;
           deleted_at: string | null;
@@ -96,6 +100,10 @@ export type Database = {
           user_id: string;
           name: string;
           description?: string | null;
+          file_path?: string | null;
+          file_name?: string | null;
+          file_size?: number | null;
+          uploaded_at?: string | null;
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;
@@ -105,6 +113,10 @@ export type Database = {
           user_id?: string;
           name?: string;
           description?: string | null;
+          file_path?: string | null;
+          file_name?: string | null;
+          file_size?: number | null;
+          uploaded_at?: string | null;
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;
@@ -256,6 +268,11 @@ export type Database = {
           stripe_customer_id: string | null;
           stripe_subscription_id: string | null;
           current_period_end: string | null;
+          billing_interval:
+            | Database["public"]["Enums"]["subscription_billing_interval"]
+            | null;
+          cancel_at: string | null;
+          latest_invoice_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -267,6 +284,11 @@ export type Database = {
           stripe_customer_id?: string | null;
           stripe_subscription_id?: string | null;
           current_period_end?: string | null;
+          billing_interval?:
+            | Database["public"]["Enums"]["subscription_billing_interval"]
+            | null;
+          cancel_at?: string | null;
+          latest_invoice_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -278,6 +300,11 @@ export type Database = {
           stripe_customer_id?: string | null;
           stripe_subscription_id?: string | null;
           current_period_end?: string | null;
+          billing_interval?:
+            | Database["public"]["Enums"]["subscription_billing_interval"]
+            | null;
+          cancel_at?: string | null;
+          latest_invoice_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -316,6 +343,156 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      calendar_events: {
+        Row: {
+          id: string;
+          user_id: string;
+          application_id: string | null;
+          type: Database["public"]["Enums"]["calendar_event_type"];
+          title: string;
+          description: string | null;
+          event_date: string;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          application_id?: string | null;
+          type?: Database["public"]["Enums"]["calendar_event_type"];
+          title: string;
+          description?: string | null;
+          event_date: string;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          application_id?: string | null;
+          type?: Database["public"]["Enums"]["calendar_event_type"];
+          title?: string;
+          description?: string | null;
+          event_date?: string;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      goals: {
+        Row: {
+          id: string;
+          user_id: string;
+          metric: Database["public"]["Enums"]["goal_metric"];
+          period: Database["public"]["Enums"]["goal_period"];
+          target_value: number;
+          title: string | null;
+          status: Database["public"]["Enums"]["goal_status"];
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          metric: Database["public"]["Enums"]["goal_metric"];
+          period: Database["public"]["Enums"]["goal_period"];
+          target_value: number;
+          title?: string | null;
+          status?: Database["public"]["Enums"]["goal_status"];
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          metric?: Database["public"]["Enums"]["goal_metric"];
+          period?: Database["public"]["Enums"]["goal_period"];
+          target_value?: number;
+          title?: string | null;
+          status?: Database["public"]["Enums"]["goal_status"];
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      user_achievements: {
+        Row: {
+          id: string;
+          user_id: string;
+          achievement_key: string;
+          unlocked_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          achievement_key: string;
+          unlocked_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          achievement_key?: string;
+          unlocked_at?: string;
+        };
+        Relationships: [];
+      };
+      notification_states: {
+        Row: {
+          id: string;
+          user_id: string;
+          notification_key: string;
+          status: Database["public"]["Enums"]["notification_status"];
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          notification_key: string;
+          status?: Database["public"]["Enums"]["notification_status"];
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          notification_key?: string;
+          status?: Database["public"]["Enums"]["notification_status"];
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      stripe_webhook_events: {
+        Row: {
+          id: string;
+          type: string;
+          created_at: string;
+        };
+        Insert: {
+          id: string;
+          type: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          type?: string;
+          created_at?: string;
         };
         Relationships: [];
       };
@@ -450,6 +627,7 @@ export type Database = {
         | "Recruiter"
         | "Other";
       subscription_plan: "free" | "pro";
+      subscription_billing_interval: "month" | "year";
       subscription_status:
         | "incomplete"
         | "incomplete_expired"
@@ -465,6 +643,15 @@ export type Database = {
         | "On-site"
         | "Technical"
         | "Behavioral";
+      calendar_event_type: "reminder" | "custom";
+      goal_metric:
+        | "applications"
+        | "interviews"
+        | "offers"
+        | "recruiter_contacts";
+      goal_period: "weekly" | "monthly" | "quarterly" | "yearly" | "total";
+      goal_status: "active" | "paused" | "archived";
+      notification_status: "unread" | "read" | "archived";
     };
     CompositeTypes: Record<never, never>;
   };

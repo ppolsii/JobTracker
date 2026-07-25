@@ -1,13 +1,15 @@
 "use client";
 
 import { Download } from "lucide-react";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { UpgradeDialog } from "@/features/billing/components/UpgradeDialog";
 import {
   exportCSVAction,
   exportJSONAction,
 } from "@/features/export/actions/export.actions";
+import { ERROR_CODES } from "@/shared/constants/error-codes";
 import { Button } from "@/shared/components/ui/button";
 import {
   DropdownMenu,
@@ -38,6 +40,12 @@ function downloadFile(content: string, filename: string, mimeType: string) {
 // documented anywhere in UI_SYSTEM.md).
 export function ExportMenu() {
   const [isPending, startTransition] = useTransition();
+  // Phase 31.5 (Pro Plan Foundation): a FORBIDDEN result here always means
+  // "Export requires Pro" (the only rule ExportService enforces via
+  // BillingService.requireProPlan) - shown as the Upgrade dialog instead of
+  // a plain toast. Any other error (e.g. a genuine internal error) still
+  // surfaces as a toast, unchanged.
+  const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false);
 
   function handleExport(format: "csv" | "json") {
     startTransition(async () => {
@@ -45,6 +53,10 @@ export function ExportMenu() {
         format === "csv" ? await exportCSVAction() : await exportJSONAction();
 
       if (!result.success) {
+        if (result.error.code === ERROR_CODES.FORBIDDEN) {
+          setUpgradeDialogOpen(true);
+          return;
+        }
         toast.error(result.error.message);
         return;
       }
@@ -59,21 +71,28 @@ export function ExportMenu() {
   }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={<Button variant="ghost" size="icon" disabled={isPending} />}
-        aria-label="Export your data"
-      >
-        <Download className="size-4" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => handleExport("csv")}>
-          Export applications as CSV
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => handleExport("json")}>
-          Export all data as JSON
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={<Button variant="ghost" size="icon" disabled={isPending} />}
+          aria-label="Export your data"
+        >
+          <Download className="size-4" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => handleExport("csv")}>
+            Export applications as CSV
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => handleExport("json")}>
+            Export all data as JSON
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <UpgradeDialog
+        open={upgradeDialogOpen}
+        onOpenChange={setUpgradeDialogOpen}
+        featureName="Export"
+      />
+    </>
   );
 }

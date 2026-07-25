@@ -19,6 +19,7 @@ import type {
   WorkModeAnalyticsRow,
 } from "@/features/analytics/types/analytics.types";
 import {
+  INTERVIEW_STAGE_ONLY_STATUSES,
   INTERVIEW_STAGE_STATUSES,
   OFFER_STAGE_STATUSES,
   UNRESPONDED_STATUSES,
@@ -48,6 +49,14 @@ export interface ApplicationHistoryFacts {
   // so a single recorded timestamp is exact, not just the "most recent" one.
   offerEnteredAt: string | null;
   acceptedEnteredAt: string | null;
+  // IMPLEMENTATION_ORDER_V2.md Phase 33 (Advanced Analytics) "Timeline
+  // Analysis": stage-to-stage averages need the timestamp an application
+  // first entered Recruiter Contact, and first entered *any* interview stage
+  // (HR/Technical/Final - APPLICATION_STATUS_TRANSITIONS only ever moves
+  // forward through them in that order, so "first interview stage reached"
+  // is unambiguous and set at most once).
+  recruiterContactEnteredAt: string | null;
+  firstInterviewEnteredAt: string | null;
   enteredStatuses: Set<ApplicationStatus>;
   rejectedFromStage: ApplicationStatus | null;
 }
@@ -65,6 +74,8 @@ export function buildHistoryFactsByApplication(
       respondedAt: null,
       offerEnteredAt: null,
       acceptedEnteredAt: null,
+      recruiterContactEnteredAt: null,
+      firstInterviewEnteredAt: null,
       enteredStatuses: new Set<ApplicationStatus>(),
       rejectedFromStage: null,
     };
@@ -77,6 +88,17 @@ export function buildHistoryFactsByApplication(
     // application (APPLICATION_STATUS_TRANSITIONS never re-enters Applied).
     if (entry.previous_status === "Applied") {
       current.respondedAt = entry.changed_at;
+    }
+
+    if (entry.new_status === "Recruiter Contact") {
+      current.recruiterContactEnteredAt = entry.changed_at;
+    }
+
+    if (
+      !current.firstInterviewEnteredAt &&
+      INTERVIEW_STAGE_ONLY_STATUSES.includes(entry.new_status)
+    ) {
+      current.firstInterviewEnteredAt = entry.changed_at;
     }
 
     if (entry.new_status === "Offer") {
@@ -97,43 +119,70 @@ export function buildHistoryFactsByApplication(
   return facts;
 }
 
-function daysBetween(startDate: string, endTimestamp: string): number {
+// Exported (Phase 33 - Advanced Analytics) - generic enough to be reused
+// outside this file (salary statistics, timeline day-counts) rather than
+// each new calculation file redefining the same rounding/rate arithmetic.
+export function daysBetween(startDate: string, endTimestamp: string): number {
   const startMs = new Date(startDate).getTime();
   const endMs = new Date(endTimestamp).getTime();
   return (endMs - startMs) / (1000 * 60 * 60 * 24);
 }
 
-function roundTo(value: number, decimals: number): number {
+export function roundTo(value: number, decimals: number): number {
   const factor = 10 ** decimals;
   return Math.round(value * factor) / factor;
 }
 
-function toRate(numerator: number, denominator: number): number | null {
+export function toRate(numerator: number, denominator: number): number | null {
   if (denominator === 0) return null;
   return roundTo((numerator / denominator) * 100, 1);
 }
 
-// Generic "Application Date -> some later event" average, shared by Average
-// Response/Offer/Hiring Time (ANALYTICS_ENGINE.md "Time Metrics") - the three
-// differ only in which `ApplicationHistoryFacts` timestamp they read.
-function computeAverageDaysBetween(
+// Generic "some event -> some later event" average. Exported (Phase 33) as
+// a more general form of the "Application Date -> event" shape Average
+// Response/Offer/Hiring Time already use below, so Timeline Analysis's
+// stage-to-stage averages (e.g. Recruiter Contact -> first Interview) can
+// reuse the exact same day-counting/rounding logic instead of a parallel
+// implementation.
+export function computeAverageDaysBetweenEvents(
   apps: AnalyticsApplicationRow[],
   historyFacts: Map<string, ApplicationHistoryFacts>,
-  eventAtOf: (facts: ApplicationHistoryFacts) => string | null
+  fromAtOf: (
+    app: AnalyticsApplicationRow,
+    facts: ApplicationHistoryFacts | undefined
+  ) => string | null,
+  toAtOf: (facts: ApplicationHistoryFacts) => string | null
 ): number | null {
   const samples: number[] = [];
 
   for (const app of apps) {
-    if (!app.application_date) continue;
     const facts = historyFacts.get(app.id);
-    const eventAt = facts && eventAtOf(facts);
-    if (!eventAt) continue;
-    samples.push(daysBetween(app.application_date, eventAt));
+    const fromAt = fromAtOf(app, facts);
+    if (!fromAt) continue;
+    const toAt = facts && toAtOf(facts);
+    if (!toAt) continue;
+    samples.push(daysBetween(fromAt, toAt));
   }
 
   if (samples.length === 0) return null;
   const average = samples.reduce((sum, days) => sum + days, 0) / samples.length;
   return roundTo(average, 1);
+}
+
+// "Application Date -> some later event" - the shape Average Response/
+// Offer/Hiring Time all share, expressed as computeAverageDaysBetweenEvents
+// with `application_date` fixed as the start.
+function computeAverageDaysBetween(
+  apps: AnalyticsApplicationRow[],
+  historyFacts: Map<string, ApplicationHistoryFacts>,
+  eventAtOf: (facts: ApplicationHistoryFacts) => string | null
+): number | null {
+  return computeAverageDaysBetweenEvents(
+    apps,
+    historyFacts,
+    (app) => app.application_date,
+    eventAtOf
+  );
 }
 
 function computeAverageResponseTimeDays(

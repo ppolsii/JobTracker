@@ -1,11 +1,12 @@
-import { ApplicationCreateButton } from "@/features/applications/components/ApplicationCreateButton";
-import { CompanyCreateButton } from "@/features/companies/components/CompanyCreateButton";
-import { CVVersionCreateButton } from "@/features/cv/components/CVVersionCreateButton";
+import { NewApplicationButton } from "@/features/applications/components/NewApplicationButton";
 
-// FEATURES.md Feature 7 "Quick Actions": reuses the three existing,
-// fully self-contained create-button components verbatim (each already
-// manages its own dialog) rather than inventing a new dashboard-specific
-// creation UI - true one-click create, not just navigation links.
+// IMPLEMENTATION_ORDER_V2.md Phase 40 "DASHBOARD": replaces the previous
+// three separate create buttons (Company/CV/Application) with the single
+// "+ New Application" entry point every other creation surface now shares -
+// creating an application is the central workflow (this phase's own
+// DESIGN PRINCIPLE), so Companies/CVs are no longer offered as a starting
+// point here; both remain reachable inline from within the application
+// form itself (CompanyCombobox / "+ Upload new CV").
 export function QuickActions({
   companies,
   cvVersions,
@@ -15,9 +16,7 @@ export function QuickActions({
 }) {
   return (
     <div className="flex flex-wrap gap-2">
-      <ApplicationCreateButton companies={companies} cvVersions={cvVersions} />
-      <CompanyCreateButton />
-      <CVVersionCreateButton />
+      <NewApplicationButton companies={companies} cvVersions={cvVersions} />
     </div>
   );
 }

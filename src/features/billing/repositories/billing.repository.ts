@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 
 const SUBSCRIPTION_COLUMNS =
-  "id, user_id, plan, status, stripe_customer_id, stripe_subscription_id, current_period_end, created_at, updated_at";
+  "id, user_id, plan, status, stripe_customer_id, stripe_subscription_id, current_period_end, billing_interval, cancel_at, latest_invoice_id, created_at, updated_at";
 
 // Only this module may query the subscriptions table for user-scoped reads
 // (ADR-008). Every user has exactly one row (handle_new_user creates it at

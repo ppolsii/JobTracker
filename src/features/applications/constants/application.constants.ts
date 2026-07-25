@@ -120,6 +120,18 @@ export const INTERVIEW_STAGE_STATUSES: ApplicationStatus[] = [
 
 export const OFFER_STAGE_STATUSES: ApplicationStatus[] = ["Offer", "Accepted"];
 
+// IMPLEMENTATION_ORDER_V2.md Phase 33 (Advanced Analytics) "Timeline
+// Analysis": the interview stages *only*, distinct from
+// INTERVIEW_STAGE_STATUSES above (which also includes Offer/Accepted, since
+// that list answers "did this application reach at least an interview" for
+// the Interviews KPI/Interview Rate). Timeline Analysis needs the moment an
+// application first entered *an interview stage specifically*, not Offer.
+export const INTERVIEW_STAGE_ONLY_STATUSES: ApplicationStatus[] = [
+  "HR Interview",
+  "Technical Interview",
+  "Final Interview",
+];
+
 // ANALYTICS_ENGINE.md "Response Rate": "A response is considered any status
 // after Applied" - i.e. everything except these two. Used by both
 // ApplicationStatsService (Dashboard/Analytics "Responded" count) and

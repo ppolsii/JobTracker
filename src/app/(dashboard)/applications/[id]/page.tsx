@@ -13,6 +13,7 @@ import { ApplicationNoteService } from "@/features/applications/services/applica
 import { ApplicationPickerService } from "@/features/applications/services/application-picker.service";
 import { ApplicationStatusService } from "@/features/applications/services/application-status.service";
 import { ApplicationService } from "@/features/applications/services/application.service";
+import { formatSalary } from "@/features/applications/utils/salary";
 import { InterviewFeedbackPanel } from "@/features/interview-feedback/components/InterviewFeedbackPanel";
 import type { InterviewFeedback } from "@/features/interview-feedback/types/interview-feedback.types";
 import { InterviewFeedbackService } from "@/features/interview-feedback/services/interview-feedback.service";
@@ -87,8 +88,11 @@ export default async function ApplicationDetailPage({
     }
   }
 
-  const hasSalary =
-    application.salary_min != null || application.salary_max != null;
+  const salaryDisplay = formatSalary(
+    application.salary_min,
+    application.salary_max,
+    application.currency
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -160,14 +164,7 @@ export default async function ApplicationDetailPage({
               label="Application Date"
               value={application.application_date ?? "—"}
             />
-            <InfoRow
-              label="Salary"
-              value={
-                hasSalary
-                  ? `${application.salary_min ?? "?"}–${application.salary_max ?? "?"} ${application.currency}`
-                  : "—"
-              }
-            />
+            <InfoRow label="Salary" value={salaryDisplay ?? "—"} />
           </CardContent>
         </Card>
 

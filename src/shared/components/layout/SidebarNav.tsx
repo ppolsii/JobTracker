@@ -3,18 +3,25 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { ROUTES } from "@/config/routes";
 import { NAV_ITEMS } from "@/config/navigation";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/shared/components/ui/badge";
 
 // Generic nav-link list, reused by both the desktop Sidebar and the mobile
 // drawer. Takes no dependency on any feature: the logout action is injected
 // by the caller via `footer` (composed at the app layer, which is where
 // features get wired together) rather than imported directly here.
+// Phase 31.5 (Pro Plan Foundation): `showProBadge` is the same kind of
+// caller-supplied slot, kept a plain boolean (not a Billing import) so this
+// component still takes no feature dependency of its own.
 export function SidebarNav({
   footer,
+  showProBadge,
   onNavigate,
 }: {
   footer?: React.ReactNode;
+  showProBadge?: boolean;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -41,6 +48,11 @@ export function SidebarNav({
             >
               <Icon className="size-4" />
               {item.label}
+              {showProBadge && item.href === ROUTES.PRICING ? (
+                <Badge variant="secondary" className="ml-auto">
+                  Pro
+                </Badge>
+              ) : null}
             </Link>
           );
         })}

@@ -25,6 +25,12 @@ export const restoreCVVersionSchema = z.object({
 });
 export type RestoreCVVersionInput = z.infer<typeof restoreCVVersionSchema>;
 
+// Phase 40 (CV Library).
+export const getCVDownloadUrlSchema = z.object({
+  id: z.string().uuid(),
+});
+export type GetCVDownloadUrlInput = z.infer<typeof getCVDownloadUrlSchema>;
+
 // Used to sanitize the CV versions list page's searchParams (untrusted input
 // per CODE_STYLE.md "Security"). Falls back to sane defaults instead of
 // erroring, since a malformed page/limit in the URL shouldn't break a read.

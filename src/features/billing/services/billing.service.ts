@@ -97,4 +97,36 @@ export const BillingService = {
 
     return { success: true, data: true };
   },
+
+  // Phase 31.5 (Pro Plan Foundation) - read-only sibling of
+  // requireApplicationCapacity, for display (the Usage Indicator) rather
+  // than an allow/deny decision. Reuses the exact same count primitive and
+  // constant - the number shown to the user and the number enforced on
+  // create are guaranteed to be the same value, never two separate
+  // calculations. `limit: null` means unlimited (Pro).
+  async getApplicationUsage(
+    userId: string
+  ): Promise<ActionResult<{ used: number; limit: number | null }>> {
+    const isPro = await getIsProPlan(userId);
+    if (!isPro.success) return isPro;
+
+    const { count, error } = await ApplicationRepository.countByStatuses(userId);
+    if (error) {
+      return {
+        success: false,
+        error: {
+          message: "Something went wrong while checking your application usage.",
+          code: ERROR_CODES.INTERNAL_ERROR,
+        },
+      };
+    }
+
+    return {
+      success: true,
+      data: {
+        used: count ?? 0,
+        limit: isPro.data ? null : FREE_PLAN_APPLICATION_LIMIT,
+      },
+    };
+  },
 };

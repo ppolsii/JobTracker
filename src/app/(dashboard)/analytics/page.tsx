@@ -1,4 +1,6 @@
+import { BarChart3, Sparkles } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { ROUTES } from "@/config/routes";
@@ -12,6 +14,8 @@ import { TrendAnalysisCard } from "@/features/analytics/components/TrendAnalysis
 import { WorkModeAnalyticsTable } from "@/features/analytics/components/WorkModeAnalyticsTable";
 import { AnalyticsService } from "@/features/analytics/services/analytics.service";
 import { AuthService } from "@/features/auth/services/auth.service";
+import { EmptyState } from "@/shared/components/EmptyState";
+import { Button } from "@/shared/components/ui/button";
 import {
   Card,
   CardContent,
@@ -40,6 +44,7 @@ export default async function AnalyticsPage() {
   }
 
   const {
+    totalApplications,
     overview,
     companyAnalytics,
     cvAnalytics,
@@ -54,115 +59,156 @@ export default async function AnalyticsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h2 className="text-lg font-semibold">Analytics</h2>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h2 className="text-lg font-semibold">Analytics</h2>
+        {/* IMPLEMENTATION_ORDER_V2.md Phase 33: a link, not a client-side
+            plan check - the target page's own Server Component already
+            gates Free users behind AdvancedAnalyticsGate, the same
+            "attempt the action, then react" pattern every other Pro-gated
+            entry point in this app already uses. */}
+        <Button
+          variant="outline"
+          nativeButton={false}
+          render={<Link href={ROUTES.ANALYTICS_ADVANCED} />}
+        >
+          <Sparkles className="size-4" />
+          Advanced Analytics
+        </Button>
+      </div>
 
-      <AnalyticsRateCards overview={overview} />
+      {totalApplications === 0 ? (
+        // Bug fix follow-up (UX Refinement phase): "no applications yet" is
+        // an expected, empty business state, not a partial/degraded page -
+        // previously this rendered all nine widgets in their individually
+        // zeroed-out forms (0% rate cards, an empty funnel, an empty
+        // insights list, etc.), which read as broken rather than "you
+        // haven't started." One clear empty state replaces all of that
+        // until the user's first application exists.
+        <EmptyState
+          icon={BarChart3}
+          title="No analytics yet"
+          description="Create your first application to start seeing response rates, interview trends, and more here."
+          action={
+            <Button
+              type="button"
+              nativeButton={false}
+              render={<Link href={ROUTES.APPLICATIONS} />}
+            >
+              Create your first application
+            </Button>
+          }
+        />
+      ) : (
+        <>
+          <AnalyticsRateCards overview={overview} />
 
-      <AnalyticsTimeMetrics
-        averageOfferTimeDays={overview.averageOfferTimeDays}
-        averageHiringTimeDays={overview.averageHiringTimeDays}
-      />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Insights</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <InsightsList insights={insights} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Trend Analysis</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <TrendAnalysisCard trend={trend} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Funnel</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <FunnelChart stages={funnel} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Monthly Analytics</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AnalyticsComparisonTable
-            nameColumnLabel="Month"
-            rows={monthlyAnalytics}
-            emptyTitle="No monthly data yet"
-            emptyDescription="Applications with a recorded application date will appear here, grouped by month."
+          <AnalyticsTimeMetrics
+            averageOfferTimeDays={overview.averageOfferTimeDays}
+            averageHiringTimeDays={overview.averageHiringTimeDays}
           />
-        </CardContent>
-      </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Company Analytics</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AnalyticsComparisonTable
-            nameColumnLabel="Company"
-            rows={companyAnalytics}
-            emptyTitle="No company data yet"
-            emptyDescription="Create applications for your companies to see a breakdown here."
-          />
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Insights</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <InsightsList insights={insights} />
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>CV Analytics</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AnalyticsComparisonTable
-            nameColumnLabel="CV Version"
-            rows={cvAnalytics}
-            emptyTitle="No CV data yet"
-            emptyDescription="Create applications with a CV version to see a breakdown here."
-          />
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Trend Analysis</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <TrendAnalysisCard trend={trend} />
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Source Analytics</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AnalyticsComparisonTable
-            nameColumnLabel="Source"
-            rows={sourceAnalytics}
-            emptyTitle="No source data yet"
-            emptyDescription="Record where your applications came from to see a breakdown here."
-          />
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Funnel</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <FunnelChart stages={funnel} />
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Work Mode Analytics</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <WorkModeAnalyticsTable rows={workModeAnalytics} />
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Monthly Analytics</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AnalyticsComparisonTable
+                nameColumnLabel="Month"
+                rows={monthlyAnalytics}
+                emptyTitle="No monthly data yet"
+                emptyDescription="Applications with a recorded application date will appear here, grouped by month."
+              />
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Employment Type Analytics</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <EmploymentTypeAnalyticsTable rows={employmentTypeAnalytics} />
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Company Analytics</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AnalyticsComparisonTable
+                nameColumnLabel="Company"
+                rows={companyAnalytics}
+                emptyTitle="No company data yet"
+                emptyDescription="Create applications for your companies to see a breakdown here."
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>CV Analytics</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AnalyticsComparisonTable
+                nameColumnLabel="CV Version"
+                rows={cvAnalytics}
+                emptyTitle="No CV data yet"
+                emptyDescription="Create applications with a CV version to see a breakdown here."
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Source Analytics</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AnalyticsComparisonTable
+                nameColumnLabel="Source"
+                rows={sourceAnalytics}
+                emptyTitle="No source data yet"
+                emptyDescription="Record where your applications came from to see a breakdown here."
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Work Mode Analytics</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <WorkModeAnalyticsTable rows={workModeAnalytics} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Employment Type Analytics</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <EmploymentTypeAnalyticsTable rows={employmentTypeAnalytics} />
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }

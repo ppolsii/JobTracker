@@ -41,6 +41,22 @@ export const InterviewFeedbackRepository = {
       .order("created_at", { ascending: true });
   },
 
+  // IMPLEMENTATION_ORDER_V2.md Phase 34 (Calendar & Timeline): every
+  // feedback row for this user, across every application, in one query -
+  // backs the Calendar's Event Details panel ("Interview Feedback (if
+  // any)"). Mirrors ApplicationNoteRepository.listAllForUser's exact shape
+  // (built for Export, Phase 14): a bulk-by-user read, no join needed since
+  // this table already has its own user_id column.
+  async listAllForUser(userId: string) {
+    const supabase = await createClient();
+    return supabase
+      .from("interview_feedback")
+      .select(INTERVIEW_FEEDBACK_COLUMNS)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: true });
+  },
+
   async update(userId: string, id: string, payload: InterviewFeedbackUpdate) {
     const supabase = await createClient();
     return supabase

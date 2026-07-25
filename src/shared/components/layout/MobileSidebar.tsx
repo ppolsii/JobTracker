@@ -15,7 +15,13 @@ import {
 
 // Mobile equivalent of Sidebar (UI_SYSTEM.md: "Mobile ... Sidebar becomes a
 // Drawer"). Only rendered below lg via Tailwind classes on the trigger.
-export function MobileSidebar({ footer }: { footer?: React.ReactNode }) {
+export function MobileSidebar({
+  footer,
+  showProBadge,
+}: {
+  footer?: React.ReactNode;
+  showProBadge?: boolean;
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -32,7 +38,11 @@ export function MobileSidebar({ footer }: { footer?: React.ReactNode }) {
           <SheetTitle className="sr-only">Navigation</SheetTitle>
         </SheetHeader>
         <div className="flex-1 overflow-y-auto px-4 pb-4">
-          <SidebarNav footer={footer} onNavigate={() => setOpen(false)} />
+          <SidebarNav
+            footer={footer}
+            showProBadge={showProBadge}
+            onNavigate={() => setOpen(false)}
+          />
         </div>
       </SheetContent>
     </Sheet>

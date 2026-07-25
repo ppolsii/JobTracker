@@ -269,6 +269,51 @@ export const CompanyService = {
     };
   },
 
+  // IMPLEMENTATION_ORDER_V2.md Phase 32 (Smart Job Import): resolves a
+  // free-text company name (extracted from a job posting, or typed by the
+  // user) to an existing company_id, creating one only if no active company
+  // with that name exists yet - so importing a job never requires the user
+  // to have pre-created the company first. Reuses `create`'s own uniqueness
+  // handling entirely (no new Repository method, no new business rule): if
+  // `create` still hits the 23505 unique-name violation (a concurrent
+  // request created the same name between our pre-check and this call), that
+  // is exactly the "found" case here, not a real conflict - re-resolved
+  // instead of surfaced as an error, since "find or create" should never
+  // fail just because the company already exists.
+  async findOrCreateByName(
+    userId: string,
+    name: string
+  ): Promise<ActionResult<{ id: string }>> {
+    const trimmedName = name.trim();
+
+    const existing = await CompanyRepository.findActiveByName(
+      userId,
+      trimmedName
+    );
+    if (existing.data) {
+      return { success: true, data: { id: existing.data.id } };
+    }
+
+    const created = await CompanyService.create(userId, {
+      name: trimmedName,
+    });
+    if (created.success) {
+      return { success: true, data: { id: created.data.id } };
+    }
+
+    if (created.error.code === ERROR_CODES.CONFLICT) {
+      const retry = await CompanyRepository.findActiveByName(
+        userId,
+        trimmedName
+      );
+      if (retry.data) {
+        return { success: true, data: { id: retry.data.id } };
+      }
+    }
+
+    return created;
+  },
+
   // Backs ExportService only - see CompanyRepository.listAllIncludingArchived.
   async listAllIncludingArchived(
     userId: string

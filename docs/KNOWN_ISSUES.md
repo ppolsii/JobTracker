@@ -10,9 +10,13 @@ Tracks accepted technical debt, limitations, and postponed items.
 
 `CODE_STYLE.md` defines an import grouping convention (React/Next → external → shared → feature → relative). No ESLint plugin enforces this automatically — kept the dependency set minimal per `PROJECT_CONSTRAINTS.md`. Convention must be followed manually during development and code review.
 
-### Transitive `postcss` advisory (moderate)
+### Transitive `postcss`/`sharp` advisories (high)
 
-`npm audit` reports a moderate-severity advisory in `postcss` (bundled inside Next.js's own dependency tree, not a direct dependency). The only fix `npm audit fix --force` offers is downgrading Next.js to `9.3.3`, which contradicts ADR-001 ("latest stable version should always be used") and is not a real fix. No action taken; revisit once Next.js ships an updated internal `postcss` version.
+**Re-confirmed (Version 2, Phase 39 - Production Readiness Audit).** `npm audit` reports high-severity advisories in `postcss` and `sharp` (both bundled inside Next.js's own dependency tree, not direct dependencies - `sharp` backs Next's built-in Image Optimization API, which this application never uses, since no page uses `next/image`). The only fix `npm audit fix --force` offers is downgrading Next.js to `9.3.3`, which contradicts ADR-001 ("latest stable version should always be used") and is not a real fix. No action taken; revisit once Next.js ships an updated internal `postcss`/`sharp` version. This phase separately confirmed and fixed the *actual* actionable Next.js advisories (several high-severity Server Actions/middleware CVEs affecting `next@16.2.10` directly) by upgrading to `16.2.11` - see `CHANGELOG.md` Phase 39.
+
+### Transitive `fast-uri`/`@hono/node-server` advisories via the `shadcn` CLI (moderate/high)
+
+**New (Version 2, Phase 39).** `npm audit` reports advisories in `fast-uri` and `@hono/node-server`, both reachable only through `shadcn` (the component-scaffolding CLI, moved to `devDependencies` this phase - it was never imported by any application code, confirmed by a full-codebase search). Since `shadcn` is never bundled or executed in production - only run manually by a developer via `npx shadcn add` - this has no runtime exposure to deployed users. The only fix downgrades `shadcn` to `3.8.3` (`npm audit fix --force`), an unverified breaking change for a rarely-invoked dev tool; not applied. Revisit if `shadcn` ships a patched release.
 
 ---
 
@@ -270,11 +274,41 @@ This is the cumulative form of every "Real data not verified against a live data
 
 ### `SUPABASE_SERVICE_ROLE_KEY` remains unused
 
-Confirmed via a full-codebase grep during this phase's security review: no code path anywhere uses the Supabase Admin API or a service-role client. `DEPLOYMENT.md` has been corrected to reflect this (moved out of "required" environment variables). It would only become required if a future version implements a feature needing elevated privileges (e.g. Phase 15's deferred "Danger Zone" account deletion).
+**No longer true - resolved (Version 2, Phase 23/38).** At the time of this Phase 18 review, no code path used the Supabase Admin API. The Stripe billing webhook (Phase 23) and Checkout/Customer Portal session creation (Phase 38) now both depend on it, via `src/lib/supabase/admin.ts` - see `DEPLOYMENT.md`'s Environment Variables section, which documents it as required for production billing. No longer tracked as unused.
 
 ### Connecting the GitHub repository to Vercel is a manual, dashboard-side step
 
 `.github/workflows/ci.yml` (added this phase) covers the CI gate (type check, lint, build, unit tests) that `DEPLOYMENT.md` requires before deployment. The actual deployment mechanism - Vercel's automatic-deploy-on-push-to-`main` and preview-deployments-per-PR - is configured by connecting the repository in the Vercel dashboard, which cannot be done from this environment. This is expected, minimal, one-time manual setup, not a gap in the application itself.
+
+---
+
+## Phase 39 — Production Readiness Audit
+
+Full findings, severity ranking, and reasoning: `PRODUCTION_AUDIT_REPORT.md`. Only the items left open are repeated here, per this file's own purpose ("tracks accepted technical debt... not fixed this phase").
+
+### No rate limiting exists on any Server Action
+
+Nothing protects `registerAction`/`requestPasswordResetAction`/Checkout session creation (or any other Server Action) from being called repeatedly beyond Supabase Auth's own baseline protections on its own endpoints. Real rate limiting needs new infrastructure (e.g. Upstash Redis + `@upstash/ratelimit`) and real traffic to tune thresholds against - a new-dependency, new-architecture decision this audit's own "no new features, no redesign" scope correctly excluded. See `PRODUCTION_AUDIT_REPORT.md` "High Priority."
+
+### Content-Security-Policy not implemented
+
+Five safe headers were added (`next.config.ts`), but a real CSP was not - this environment has no way to load the app in a real browser to confirm a policy doesn't silently break Next's hydration scripts, the JSON-LD `dangerouslySetInnerHTML`, or Base UI's portal-based dialogs before shipping it. A recommended starting policy is documented in `PRODUCTION_AUDIT_REPORT.md` "High Priority" - test it in a real browser before enabling.
+
+### Stripe production billing (Phase 38) has never been exercised against a real Stripe account
+
+Same root cause as every "not verified against live data" entry in this file, applied to the newest, most operationally sensitive feature. `DEPLOYMENT.md`'s "Production Billing Setup" walkthrough documents the exact steps; they have not yet been performed.
+
+### Several Services still have no dedicated unit test file
+
+`application-note.service.ts` (real ownership-check branching - the next-highest-value addition), `application-stats.service.ts`, `dashboard.service.ts`, `application-picker.service.ts`, `auth-browser.service.ts`. `application.service.ts` - the most central, most complex of the group - was the one addressed this phase (26 new tests). `cv-version.service.ts` remains deliberately untested, unchanged from the Phase 17 reasoning above.
+
+### Three `applications` columns are still never written
+
+`offer_salary`, `rejection_reason`, `response_date` - re-confirmed still true (first flagged Phase 9). Not a bug against any documented requirement; dead schema, not dead code.
+
+### `env.ts` mixes public and server-only values in one object
+
+Verified safe in practice (no `"use client"` file imports it), but a `publicEnv`/`serverEnv` split would be a more defensively-structured shape as this list grows. Not worth a standalone refactor on its own.
 
 ---
 

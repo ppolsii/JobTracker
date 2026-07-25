@@ -1095,3 +1095,500 @@ Let users attach structured feedback to a specific Status History entry, per `IM
 ### Version 2 complete
 
 Phase 30 was the last phase in `IMPLEMENTATION_ORDER_V2.md`. Every phase from 19 through 30 has been implemented, reviewed, and documented.
+
+---
+
+## Phase 31 — Pro Plan Foundation (2026-07-23)
+
+Reduced the Free plan's active application limit from 25 to 15. No other behavior changed: every feature remains available on the Free plan, Pro remains unlimited, and Export remains Pro-only.
+
+### Phase numbering note
+
+This session's instructions labeled this "Phase 31," which conflicts with `IMPLEMENTATION_ORDER_V2.md`'s own Phase 31 ("Recruiter / Contact Tracking," unimplemented). Version 2 (Phases 19-30) was already complete as of the previous entry, and this change is a standalone policy adjustment to the existing Phase 24 billing enforcement, not a new roadmap phase - it does not claim or displace the document's actual Phase 31. Recorded under this label only to match the session's own request.
+
+### Changed
+
+- `FREE_PLAN_APPLICATION_LIMIT` (`src/features/billing/constants/billing.constants.ts`): `25` → `15`. This is the single source of truth `BillingService.requireApplicationCapacity` reads - no other file hardcodes the number. The rejection message, built from the constant (`` `The Free plan is limited to ${FREE_PLAN_APPLICATION_LIMIT} applications...` ``), updates automatically; no separate UI string existed to find or change.
+
+### Documentation updated
+
+- `BUSINESS_RULES.md` - "Application Limit" now states 15, noting it was reduced from 25 (Phase 31).
+- `API.md` - "Create Application" plan-gating note now states 15.
+- `USER_GUIDE.md` - both mentions of the Free plan limit (Managing Applications, FAQ) updated to 15.
+
+### Verification
+
+- `npm run typecheck`, `npm run lint`, `npm run test` (131 tests, 13 files, unchanged), and `npm run build` all pass. `billing.service.test.ts`'s existing tests assert against `FREE_PLAN_APPLICATION_LIMIT` symbolically (e.g. `count: FREE_PLAN_APPLICATION_LIMIT - 1`), not a literal `25`, so they validate the new limit automatically with no test-file changes required.
+- Confirmed via `grep` that no other source file, test, or UI string hardcodes the old value `25` in a billing/application-limit context.
+- Not verified against a live database in this environment - same persistent limitation as every phase since Phase 4.
+
+---
+
+## Phase 31.5 — Subscription & Billing Experience (2026-07-23)
+
+Built the complete surrounding UX for the Free/Pro plans - a Pricing page, a Subscription section in Settings, a live usage indicator, and polished upgrade/limit dialogs - without changing any entitlement, Stripe integration, or server-side validation. No new premium feature was introduced; every Pro-only capability listed on the new Pricing page already existed (Export) or is explicitly marked "Coming Soon."
+
+### Scope clarification
+
+Labeled "Phase 31.5" per this session's own request - not a numbered phase in `IMPLEMENTATION_ORDER_V2.md` (see the Phase 31 numbering note above). This is UI/UX work layered onto the existing, unchanged Phase 23/24 billing foundation.
+
+### Checkout/Customer Portal decision
+
+No Stripe Price IDs, Checkout Session creation, or Customer Portal code exist anywhere in this codebase - Phase 24 explicitly excluded Checkout, and nothing has added it since (`BUSINESS_RULES.md`: "nothing sets `plan` to `pro` yet"). Raised to the user before writing any code, since this phase's own instructions both said "keep Stripe integration unchanged" and "unless required by the UI" - a real tension given every "Upgrade"/"Manage subscription" CTA needs to do *something*. The user confirmed: UI-only this phase. Every such CTA (`UpgradeButton`, `ManageSubscriptionButton`) is fully styled and wired into the app, but shows an informational toast ("Upgrading isn't available yet…") instead of a real Stripe redirect. No new environment variables, no new Stripe API calls beyond the existing webhook-verification ones.
+
+### Added
+
+- `src/shared/components/ui/badge.tsx`, `progress.tsx` - two new generic primitives (Base UI's `@base-ui/react/progress` wrapped in this project's existing shadcn-style pattern; `Badge` is presentational only, no Base UI equivalent needed). Neither existed before this phase and both are reused across every new component below - not billing-specific, so they live in `shared/components/ui`, not `features/billing`.
+- `BillingService.getApplicationUsage(userId)` - a read-only sibling of `requireApplicationCapacity`, reusing the exact same `ApplicationRepository.countByStatuses` call and `FREE_PLAN_APPLICATION_LIMIT` constant, so the number displayed to the user and the number enforced on create can never drift apart. Returns `{ used, limit }`, with `limit: null` for Pro (unlimited).
+- `billing.constants.ts` gained `USAGE_WARNING_RATIO` (0.8, display-only - not an entitlement threshold), `PLAN_FEATURE_ROWS` (the Pricing page's comparison-table data - the single source for both plan cards and the table, so the copy is never written twice), and `PRO_BENEFITS` (the shared "why upgrade" bullet list reused by every dialog).
+- `src/features/billing/utils/usage-status.ts` - `getUsageStatus(used, limit)`, a pure function extracted specifically so the Usage Indicator's "ok"/"approaching-limit"/"at-limit" thresholds are unit-testable without rendering anything (this test suite has no component-rendering setup - see Testing below).
+- `src/features/billing/components/`: `UpgradeButton`, `ManageSubscriptionButton` (the two placeholder CTAs described above); `UsageIndicator` (progress bar + the two threshold messages, Free-plan only); `UpgradeDialog` (shown when a Pro-gated action is denied - currently only Export); `LimitReachedDialog` (shown when application creation is denied by the Free-plan limit); `SubscriptionSection` (Settings' new "Subscription" card: plan, status, renewal date, billing period (shows "—" - the schema has no interval/billing-period column to read, so none was invented), Usage Indicator, and the Upgrade/Manage button); `PricingPlans` (the Pricing page's plan cards + comparison table, both sourced from `PLAN_FEATURE_ROWS`).
+- `app/(dashboard)/pricing/page.tsx` (new route, `ROUTES.PRICING`) - composes `BillingService.getSubscriptionForUser` and `PricingPlans` only.
+- "Pricing" added to `NAV_ITEMS` (`config/navigation.ts`), with a Free-plan-only "Pro" upsell badge. The badge is threaded as a plain `showProBadge` boolean prop through `MainLayout` → `Sidebar`/`TopNav` → `SidebarNav`/`MobileSidebar` - the same slot-injection pattern already used for `search`/`exportMenu` (Phase 19), so `SidebarNav` still takes no dependency on the Billing feature. Computed once in `(dashboard)/layout.tsx` via `BillingService.getSubscriptionForUser`, defaulting to hidden on any lookup failure.
+
+### Changed
+
+- `ExportMenu.tsx` - a `FORBIDDEN` result (Export requires Pro) now opens `UpgradeDialog` instead of a plain toast. Any other error code still shows a toast, unchanged. No change to `ExportService`/`BillingService.requireProPlan`.
+- `ApplicationForm.tsx` - a `FORBIDDEN` result on *create only* (the Free-plan limit) now opens `LimitReachedDialog` instead of a plain toast. Editing an existing application is unaffected (that path never hits this check). No change to `ApplicationService.create`/`BillingService.requireApplicationCapacity`.
+- `app/(dashboard)/settings/page.tsx` - gained a "Subscription" card, fetching `BillingService.getSubscriptionForUser`/`getApplicationUsage` alongside the existing profile fetch (parallel, matching the page's existing `Promise.all` shape). Shows an inline error message if the subscription lookup fails, matching every other page's existing error-state convention - it does not crash the page.
+
+### Not changed (by design)
+
+- `BillingService.requireProPlan`, `requireApplicationCapacity`, `ApplicationService.create`, `ExportService`, the Stripe webhook, and the `subscriptions` table/RLS policies - untouched. Every new UI surface only *displays* or *reacts to* decisions these already make; none of them make a new decision.
+
+### Documentation updated
+
+- `API.md` - new "Subscription" section (`GET /subscription`, `GET /subscription/usage`) - both read-only, backing the new pages.
+- `USER_GUIDE.md` - new "15. Plans & Billing" section (Free vs. Pro, the Pricing page, the Subscription section, the Usage Indicator's two thresholds, the Limit Reached screen); the "Managing Applications" and FAQ sections cross-reference it.
+
+### Testing
+
+- No component-rendering tests were added. This suite has no jsdom/React Testing Library setup (`vitest.config.ts` is Node-only, by deliberate Phase 17 choice, and only collects `*.test.ts`, not `.tsx`). Adding one would mean installing new dev dependencies and changing the test config - raised to the user before doing so; the user chose to keep testing at the existing Service/pure-function layer instead. Covered there: `billing.service.test.ts` (`getApplicationUsage`, 5 new tests), `usage-status.test.ts` (the Usage Indicator's threshold boundaries, 7 tests), `billing.constants.test.ts` (`PLAN_FEATURE_ROWS`/`PRO_BENEFITS` data integrity, 4 tests).
+- `npm run typecheck`, `npm run lint`, `npm run test` (147 tests, 15 files - 2 new files, 16 new tests), and `npm run build` all pass, including the new `/pricing` route being correctly collected.
+- Not verified in a browser or against a live database in this environment - same persistent limitation as every phase since Phase 4 (no reachable Supabase/test account here).
+
+---
+
+## Phase 32 — Smart Job Import (2026-07-23)
+
+Added a Pro-only "Smart Job Import" feature: create an application by pasting a job posting URL. Ships with exactly one provider - a Manual Provider that always matches and extracts nothing, so the workflow lands the user on the same editable review form either way - built around a provider abstraction so LinkedIn/InfoJobs/Indeed/Greenhouse/Lever/Workday/Ashby can each be added later as a new provider, never a change to the Service, Actions, or UI. No scraping, no external APIs, no browser automation, no LLM integration, and no change to Stripe/entitlements/server-side validation beyond reusing what already exists.
+
+### Architecture
+
+- New feature `src/features/job-import/{types,providers,schemas,services,actions,components}`. `JobImportProvider` (`types/job-import.types.ts`) is the interface every provider implements: `supports(url)` and `extract(url)`. `ManualJobImportProvider` (`providers/manual.provider.ts`) is the only entry in `JOB_IMPORT_PROVIDERS` (`providers/job-import-providers.registry.ts`) - an ordered list, first match wins; future providers are added ahead of Manual (which must stay last, since its `supports` always returns true - the universal fallback).
+- `selectJobImportProvider(url, providers)` (`providers/select-job-import-provider.ts`) - the provider-matching logic extracted as its own pure function, specifically so "first match wins" / "falls back to Manual" / "no provider matches" are unit-testable without mocking a Service.
+- `JobImportService` (`services/job-import.service.ts`) owns provider selection, orchestration, and error handling - the only caller of `JOB_IMPORT_PROVIDERS`. `.extract(userId, url)`: Pro-gates via `BillingService.requireProPlan` (reused, not duplicated), selects a provider, calls `.extract()`, and translates any thrown error into a generic message ("never expose internal errors" - whatever a future provider's own extract() throws, e.g. a network failure, is never surfaced directly). `.confirmImport(userId, input)`: Pro-gates again (defense in depth - never assumes the client actually went through `.extract()` first), resolves the company name via `CompanyService.findOrCreateByName` (new), then creates the application through the exact same `ApplicationService.create` every other creation path uses - the Free plan's application-count limit and reference validation are not bypassed for imports.
+- `CompanyService.findOrCreateByName(userId, name)` (`features/companies/services/company.service.ts`) - resolves a free-text company name to an existing company's id, creating one only if no active company with that name exists yet, so importing a job never requires the company to already exist. Reuses `create`'s own uniqueness handling entirely (no new Repository method): a 23505 conflict from a concurrent request is re-resolved to the winning row rather than surfaced as an error, since "find or create" should never fail just because the company already exists.
+- `description` (one of the extraction fields) has no column on `applications` - it becomes the application's first Note instead (`ApplicationNoteService.create`, reused as-is). Best-effort: if attaching the note fails, the already-created application is still returned as a success, only logged.
+- `applicationDateField`/`refineDateNotInFuture` (`application.schema.ts`) were exported (previously private) so `confirmJobImportSchema` reuses the exact same date validation `createApplicationSchema` already has, instead of duplicating it.
+
+### UI
+
+- `ImportJobButton` - "Import Job", placed next to "Create application" on the Applications page. Always visible/clickable regardless of plan; the Pro gate only triggers on the actual import attempt, the same "attempt the action, then react to FORBIDDEN" pattern `ExportMenu` already established (Phase 31.5) - not a second, duplicated client-side plan check.
+- `ImportJobDialog` - the four-state workflow (Idle: URL input: Loading: spinner while detecting/extracting; Success: the review form; Failure: a friendly message with "Try again" and "Continue manually," the latter landing on the same review form, blank). A `FORBIDDEN` result at the Idle→Loading transition closes this dialog and opens the existing `UpgradeDialog` (Phase 31.5, reused unchanged with `featureName="Smart Job Import"`) - no second "why go Pro" dialog was built.
+- `JobImportReviewForm` - every extracted field editable before creation, mirroring `ApplicationForm`'s own fields/options/patterns (same constants, same Select/NONE_VALUE pattern, same Controller usage) for consistency. Deliberately its own component rather than reusing `ApplicationForm`: `company` is free text here (resolved to an id at confirm time), not a Select of already-existing companies - a genuine shape difference, not duplication for its own sake.
+- `billing.constants.ts`: `PLAN_FEATURE_ROWS`'s "Smart Job Import" row is no longer marked `comingSoon` (it's real now); `PRO_BENEFITS` updated to describe it as available rather than upcoming.
+
+### Documentation updated
+
+- `API.md` - new "Job Import" section (`POST /job-import/extract`, `POST /job-import/confirm`), both Pro-gated.
+- `USER_GUIDE.md` - new "Smart Job Import (Pro)" subsection under "Managing Applications"; "Plans & Billing"'s Pro feature list and FAQ updated.
+
+### Testing
+
+- No component-rendering tests, per this suite's existing philosophy (see Phase 31.5's own note on this). Added: `select-job-import-provider.test.ts` (provider detection - ordering, fallback, no-match), `manual.provider.test.ts` (always supports, extracts nothing but the URL), `job-import.schema.test.ts` (URL/confirm-import validation, including salary ordering and future-date rejection), `job-import.service.test.ts` (Pro-gating on both `extract`/`confirmImport`, provider selection/failure handling, error-message sanitization, description → Note attachment and its best-effort failure), and new `CompanyService.findOrCreateByName` tests (found/created/race-condition/trim/genuine-failure paths) in the existing `company.service.test.ts`.
+- `npm run typecheck`, `npm run lint`, `npm run test` (182 tests, 19 files - 4 new files, 35 new tests), and `npm run build` all pass, including the Applications page's new "Import Job" button being correctly collected.
+- Not verified in a browser or against a live database in this environment - same persistent limitation as every phase since Phase 4.
+
+---
+
+## Phase 33 — Advanced Analytics (2026-07-23)
+
+Expanded Analytics into a second, Pro-only, filterable dashboard (`/analytics/advanced`) covering nine areas - Application Funnel, Company Performance, CV Performance, Timeline Analysis, Job Search Activity, Work Modality, Employment Type, Salary, and Personal Insights - without replacing or changing the existing (free, unfiltered) Analytics page in any way.
+
+### Reuse over rebuilding
+
+Most of the nine sections needed no new calculation at all:
+
+- **Application Funnel** reuses `computeFunnelAnalytics` (Phase 12) unchanged.
+- **CV Performance**, **Work Modality**, and **Employment Type** reuse `computeGroupAnalytics`/`computeWorkModeAnalytics`/`computeEmploymentTypeAnalytics` (Phases 12/29) unchanged - just fed a filtered subset of applications.
+- **Personal Insights**' CV-related observation already existed (`computeInsights`, Phase 12/21) and was left untouched; only two genuinely new insights were added (see below).
+- UI-wise, `FunnelChart`, `InsightsList`, `AnalyticsComparisonTable`, `WorkModeAnalyticsTable`, and `EmploymentTypeAnalyticsTable` (Phases 12/29) are reused verbatim - not one new chart primitive was built where an existing component already fit.
+
+What's genuinely new: **Company ranking** (top/worst by interview rate), **Timeline Analysis**, **Job Search Activity** (streaks), **Salary**, and two new **Personal Insights** (work modality comparison, day-of-week comparison) - plus the **filtering** mechanism all nine sections share.
+
+### Why this path doesn't use the Phase 21 statistics views
+
+`dashboard_metrics`/`company_statistics`/`cv_statistics`/`monthly_statistics` have no filter parameters - a `WHERE company_id = ...` inside a SQL view isn't something PostgREST exposes. Since every section here must respect the same filters uniformly, `AnalyticsService.getAdvancedSummary` computes Company/CV/Monthly groupings via `computeGroupAnalytics` (the same bulk-fetch path Source Analytics already established) fed a filtered subset of `ApplicationService.listAllForAnalytics`'s existing bulk read - no new Repository method, no new query, and the base Analytics page's own view-based path is completely untouched.
+
+### Architecture
+
+- `AnalyticsRepository`/`ApplicationRepository.listAllForAnalytics`'s projection gained `salary_min`, `salary_max`, `currency` (additive - no migration, the columns already exist on `applications`) - needed for the Salary section.
+- `ApplicationHistoryFacts` (analytics-calculations.ts) gained `recruiterContactEnteredAt`/`firstInterviewEnteredAt`, populated in `buildHistoryFactsByApplication` the same way `offerEnteredAt`/`acceptedEnteredAt` already were - needed for Timeline Analysis's stage-to-stage averages. `INTERVIEW_STAGE_ONLY_STATUSES` (application.constants.ts) is a new, narrower sibling of `INTERVIEW_STAGE_STATUSES` (HR/Technical/Final Interview only, excluding Offer/Accepted) - "first interview stage reached" needed a name distinct from "reached at least an interview" (the existing Interviews KPI's own definition).
+- `computeAverageDaysBetween` (private, Phase 29) was generalized into an exported `computeAverageDaysBetweenEvents(apps, historyFacts, fromAtOf, toAtOf)` - the existing function became a thin wrapper fixing `fromAtOf` to `application_date`. No behavior change to any existing caller (Average Response/Offer/Hiring Time); Timeline Analysis's four stage-to-stage steps are the only new caller, reusing the exact same day-counting/rounding logic instead of a parallel implementation. `daysBetween`/`roundTo`/`toRate` were also exported for the same reason.
+- New `src/features/analytics/utils/advanced-analytics-calculations.ts` (pure, no I/O - mirrors analytics-calculations.ts's own split from the Service): `filterApplicationsForAdvancedAnalytics` (in-memory, applied once before any section computes); `rankCompanies` (top/worst by interview rate, gated by the existing `MIN_SAMPLE_COMPANY_COMPARISON`, plus the account-wide average response time); `computeTimelineAnalysis` (four stage-to-stage steps + fastest/slowest/median full-process duration, Application Date → Accepted); `computeActivityAnalysis` (streaks over distinct calendar days - "current" only counts if the most recent applied day is today or yesterday - plus most/least active month, reusing the already-computed monthly grouping rather than re-deriving it, and a recent-weeks ISO-week breakdown); `computeSalaryStatistics`/`computeSalaryDistribution`/`computeSalaryByCompany`/`computeSalaryByWorkMode` (every application's salary value is the midpoint of `salary_min`/`salary_max`, or whichever bound is present - applications with neither are excluded, never treated as zero); `computeAdvancedInsights` (work-modality and day-of-week comparisons, each gated by `MIN_SAMPLE_INTERVIEW_OFFER_RATE`, the same threshold the base page's own undocumented-comparison insights already reuse).
+- **Known simplification (documented, not silently assumed):** salary figures are aggregated as plain numbers regardless of each application's own `currency` - there is no currency-conversion capability in this application (no forex API, and this phase forbids external APIs). An account recording salaries in more than one currency will see a mixed aggregate.
+- **Deliberately not built:** a "most offers come from medium-sized companies" insight. `companies.size` is free text (DATABASE.md), not a structured enum - bucketing it into "small/medium/large" would mean inventing categorisation boundaries the data doesn't define, exactly the fabrication "SECTION 9" itself forbids.
+- `AnalyticsService.getAdvancedSummary(userId, filters)` - Pro-gated via `BillingService.requireProPlan`, the same check Export/Smart Job Import already use ("do not duplicate Pro gating logic").
+- `src/features/analytics/schemas/advanced-analytics.schema.ts` (new `schemas/` folder for this feature) - `advancedAnalyticsFiltersSchema` sanitizes the page's searchParams, falling back to "no filter" instead of erroring, the same convention `listApplicationsSchema` already uses.
+
+### UI
+
+- `app/(dashboard)/analytics/advanced/page.tsx` (new route, `ROUTES.ANALYTICS_ADVANCED`) - a separate page, linked from a new "Advanced Analytics" button on the existing Analytics page (which is otherwise unchanged). A `FORBIDDEN` result renders `AdvancedAnalyticsGate` (new) - the existing `UpgradeDialog` (Phase 31.5), open by default, so a Free user sees the same gate whether they arrived via the link or navigated to the URL directly.
+- `AdvancedAnalyticsFilterBar` (new) - mirrors `ApplicationFilterBar`'s URL-searchParams-driven pattern (BUSINESS_RULES.md "Filtering": "must be combinable"), scoped to the six requested filters.
+- New presentational components for the genuinely new sections: `CompanyRankingList`, `TimelineAnalysisSection`, `JobSearchActivitySection` (a CSS-width-bar recent-weeks chart, matching `FunnelChart`'s own hand-rolled style - no chart dependency was installed), `SalarySection` (same CSS-bar distribution chart). Every other section reuses an existing component unchanged (see "Reuse over rebuilding" above).
+- `billing.constants.ts`: `PLAN_FEATURE_ROWS`'s "Advanced Analytics" row is no longer marked `comingSoon`; `PRO_BENEFITS` updated to describe it as available.
+
+### Documentation updated
+
+- `API.md` - new "Advanced Analytics" subsection under "Analytics" (`GET /analytics/advanced`, filter parameters, response contents).
+- `USER_GUIDE.md` - new "Advanced Analytics (Pro)" subsection under "Analytics" (section-by-section table); "Plans & Billing" and FAQ updated.
+
+### Testing
+
+- No component-rendering tests, per this suite's existing philosophy. Added: `advanced-analytics-calculations.test.ts` (filtering - every filter and combinations; company ranking incl. minimum-sample gating; timeline stage-to-stage averages and process durations; activity streaks incl. the "current vs. stale" boundary and most/least active month; salary statistics/distribution/by-company/by-work-mode incl. missing-data handling; both new insights incl. their gating); `analytics.service.test.ts` (new - `getAdvancedSummary`'s Pro gate and filter-then-compute wiring; `getSummary` remains covered only through analytics-calculations.test.ts's pure-function tests, per this codebase's existing convention); `advanced-analytics.schema.test.ts` (filter validation/fallback behavior); plus two new regression tests in `billing.constants.test.ts` guarding that Advanced Analytics is no longer marked "Coming Soon".
+- `npm run typecheck`, `npm run lint`, `npm run test` (221 tests, 22 files - 3 new files, 39 new tests), and `npm run build` all pass, including the new `/analytics/advanced` route being correctly collected.
+- Not verified in a browser or against a live database in this environment - same persistent limitation as every phase since Phase 4.
+
+---
+
+## Phase 34 — Calendar & Timeline (2026-07-23)
+
+Added a complete, Pro-only Calendar module (`/calendar`, in the main navigation) visualizing every important job-search event - Month/Week/Agenda views, 10 event types, an Event Details side panel reusing the existing Status History timeline and Interview Feedback, user-created Reminders/Custom Events, filters, and search - without duplicating any of the Status History/Interview Feedback business logic it builds on.
+
+### Data model
+
+- New table `calendar_events` (migration `20260723090000_calendar_events.sql`) - only the two user-created event types (`reminder`, `custom`) are ever stored as rows; the other 9 event types are derived on the fly from `application_status_history` and never persisted twice. Hybrid ownership shape identical to `interview_feedback` (Phase 30): its own `user_id` column for direct filtering, plus an RLS check that an optional `application_id` (nullable - a Reminder/Custom Event need not be tied to an application) belongs to the user when set. Soft-deletes only (`deleted_at`) - no DELETE grant, matching every other business entity.
+- `AnalyticsApplicationRow`/`ApplicationRepository.listAllForAnalytics` gained `position` (additive, column already exists on `applications`) - the Calendar and its search need the position, which no earlier consumer of this shared, evolving projection did (Phase 33 added the salary fields the same way).
+- `InterviewFeedbackRepository.listAllForUser`/`InterviewFeedbackService.listAllForUser` (new) - the same "whole account, one bulk read" shape `ApplicationNoteRepository.listAllForUser` already established for Export (Phase 14), now reused so the Calendar's Event Details panel can show Interview Feedback inline with zero extra queries per event.
+
+### Architecture
+
+- New feature `src/features/calendar/{types,constants,repositories,utils,services,schemas,actions,components}`. `utils/calendar-calculations.ts` (pure, no I/O - mirrors every other feature's Service/calculations split): `deriveStatusHistoryEvents` maps each real status-history transition to a `CalendarEventType` (only `Applied`/`Recruiter Contact`/`HR Interview`/`Technical Interview`/`Final Interview`/`Offer`/`Accepted`/`Rejected` produce an event; the `Wishlist` genesis row produces none); `mapCustomEventToCalendarEvent` maps a stored row to the same unified shape; `buildCalendarEvents` merges and sorts both by date; `filterCalendarEvents`/`searchCalendarEvents` (search matches company name, position, or note content, via a notes index built once from the bulk notes read - applied after filters, never independently widening what filters already excluded); `buildMonthGrid`/`buildWeekGrid` (Monday-start, 42-cell/7-cell grids).
+- **A rejection is never silently dropped.** Only a rejection whose previous status was `Offer` maps to the task's literal "Offer Rejected" type; a rejection from any earlier stage maps to a new, generic `rejected` type instead of being discarded - hiding it would contradict a calendar whose whole purpose is to show every important event.
+- `CalendarService.getEvents(userId, filters, search)` - Pro-gated via `BillingService.requireProPlan` (reused, not duplicated - the same check Export/Smart Job Import/Advanced Analytics already use), then bulk-fetches applications, custom events, notes, and feedback in parallel (`Promise.all`), derives/merges/filters/searches events, and returns everything the Event Details panel needs (`history`/`notes`/`feedback`, as flat arrays) in one response - opening any event's details afterward costs zero additional queries. `createCustomEvent`/`updateCustomEvent`/`archiveCustomEvent` each independently re-check the Pro gate and, when an `applicationId` is given, verify it through `ApplicationService.getById` (never `ApplicationRepository` directly, the same cross-feature-Service discipline every other feature already follows).
+- `EventDetailsPanel` reuses `ApplicationStatusTimeline` (Phase 9) wholesale, including its `renderFeedback` slot (Phase 30) rendering `InterviewFeedbackPanel` - one existing component satisfies both the "Timeline" and "Interview Feedback (if any)" requirements, with no parallel timeline renderer built.
+- New shared primitive `src/shared/components/ui/tooltip.tsx` (Base UI's already-installed `@base-ui/react/tooltip`, no new dependency) - each event type's icon shows its label on hover.
+
+### UI
+
+- `app/(dashboard)/calendar/page.tsx` (new route, `ROUTES.CALENDAR`, a sidebar nav item unlike Advanced Analytics) - a `FORBIDDEN` result renders `CalendarGate` (mirrors `AdvancedAnalyticsGate`), the existing `UpgradeDialog` open by default - "do not create a new Pro gating system."
+- `CalendarBoard` renders Month (default) or Week or Agenda based on the `view` URL param; when unset, it renders both Agenda (`block sm:hidden`) and Month (`hidden sm:block`) simultaneously, letting Tailwind's breakpoint alone decide which one is visible - satisfying "Month View is the default" on desktop and "Agenda View becomes the default" on mobile with no device detection.
+- `CalendarFilterBar`/`CalendarViewSwitcher` - URL-searchParams-driven, mirroring `ApplicationFilterBar`/`AdvancedAnalyticsFilterBar`'s existing pattern.
+- `CustomEventFormDialog`/`CustomEventForm` - create and edit a Reminder or Custom Event (Type, Title, Date, optional Application, optional Description); the Applications picker is derived from the already-loaded events list (no extra query).
+- `billing.constants.ts`: `PLAN_FEATURE_ROWS`'s "Calendar" row is no longer marked `comingSoon` (it's real now); "Reminders" stays `comingSoon` - this phase built a Reminder *event type*, not proactive notification/alert delivery, and the two are not the same claim. `PRO_BENEFITS` updated accordingly.
+
+### Documentation updated
+
+- `API.md` - new "Calendar" section (`GET /calendar` with its filters, `POST /calendar/events`, `PATCH /calendar/events/:id`, `POST /calendar/events/:id/archive`), all Pro-gated.
+- `USER_GUIDE.md` - new "Calendar (Pro)" section (views, event types, event details, creating Reminders/Custom Events, filters/search); Table of Contents and every subsequent section renumbered; "Plans & Billing" and FAQ updated, including a FAQ entry clarifying that a Reminder does not yet send any notification.
+- `DATABASE.md` - new `calendar_events` table documented alongside `interview_feedback`.
+
+### Testing
+
+- No component-rendering tests, per this suite's existing philosophy. Added: `calendar-calculations.test.ts` (event-type mapping for every documented status transition including both rejection paths, the Wishlist skip, custom-event mapping with/without a linked application, merge+sort, every filter individually and combined, notes-indexed search, date grouping, and both grid builders); `calendar.service.test.ts` (the Pro gate on every method, bulk-fetch orchestration, filter-then-search ordering, applicationId ownership verification on create, and not-found handling on update/archive); `calendar.schema.test.ts` (filter fallback-to-undefined behavior, the type restricted to `reminder`/`custom`, and required-field validation); three new tests for `InterviewFeedbackService.listAllForUser` in the existing `interview-feedback.service.test.ts`; and two new regression tests in `billing.constants.test.ts` guarding that Calendar is no longer "Coming Soon" while Reminders still is.
+- `npm run typecheck`, `npm run lint`, `npm run test` (274 tests, 25 files - 3 new files, 53 new tests), and `npm run build` all pass, including the new `/calendar` route being correctly collected.
+- Not verified in a browser or against a live database in this environment - same persistent limitation as every phase since Phase 4.
+
+---
+
+## Phase 35 — Goals, Achievements & Progress (2026-07-23)
+
+Added a complete, Pro-only Goals module (`/goals`, in the main navigation): configurable goals (Applications/Interviews/Offers/Recruiter Contacts x Weekly/Monthly/Quarterly/Yearly/Total) with live-computed progress, three streak types, an automatically-unlocking achievement system, account-wide statistics, a compact Dashboard widget, and goal-deadline events inside Calendar - without duplicating a single metric Analytics/Advanced Analytics/Calendar already compute.
+
+### Phase numbering note
+
+This session's instructions labeled this "Phase 35," which conflicts with `IMPLEMENTATION_ORDER_V2.md`'s own Phase 35 ("Supabase Storage Configuration," unimplemented, a prerequisite for its Phase 36 CV file attachment). Recorded under this label only to match the session's own request, per the same practice established at Phase 31/34 - it does not claim or displace the document's actual Phase 35.
+
+### Reuse over rebuilding
+
+Every one of a goal's four metrics maps directly onto data Analytics already computes, not a new calculation:
+
+- **Applications** reads `application_date` directly off the same bulk `AnalyticsApplicationRow` projection Analytics/Advanced Analytics/Calendar already fetch.
+- **Interviews**, **Offers**, and **Recruiter Contacts** read `firstInterviewEnteredAt`/`offerEnteredAt`/`recruiterContactEnteredAt` straight off `ApplicationHistoryFacts` (Phase 29/33's own per-application status-history facts) - a goal's "current value" for a period is just a count of applications whose fact timestamp falls inside that period's window.
+- The **daily streak** (current/longest) is `computeActivityAnalysis`'s own existing output (Phase 33), passed through unchanged - never recomputed. Only the **weekly** and **monthly** streaks are genuinely new, sharing one generic "consecutive unit" algorithm between them.
+- Achievement predicates (First Interview/Offer/Accepted Offer, Interview Master, Offer Hunter) are thin checks over the same `ApplicationHistoryFacts`, deliberately checking the *history* fact rather than `current_status` - an application later rejected after interviewing still counts toward "reached an interview," which `current_status` alone would hide.
+
+### Architecture
+
+- New tables `goals` and `user_achievements` (migration `20260723100000_goals.sql`). `goals` never stores progress - only the goal's own definition (`metric`, `period`, `target_value`, optional `title`) and its `status` (`active`/`paused`/`archived`); `completed_at` is set at most once, and only for `period = 'total'` goals (recurring goals reset forever and have no single "completion" to record). `user_achievements` is a permanent, append-only unlock log (`unique(user_id, achievement_key)`) - the achievement catalog itself (label/description/unlock condition) lives entirely in code (`goal.constants.ts`/`achievement-calculations.ts`), not the database, so adding a new achievement later needs no migration.
+- New feature `src/features/goals/{types,constants,repositories,utils,services,schemas,actions,components}`. `utils/goal-calculations.ts` (pure, no I/O): `getPeriodWindow` maps a goal's period to a `[start, end]` date window over "today" (`end: null` for `total,` which never resets); `countMetricInWindow` counts matching applications inside that window; `computeGoalProgress` assembles current/target/remaining/percentage/estimated-completion-date/period bounds; `computeEstimatedCompletionDate` extrapolates a completion date from the goal's pace so far (progress-so-far ÷ days elapsed), returning `null` (not a fabricated date) whenever there's no progress yet to extrapolate from - the same "honest 'not enough data'" precedent Advanced Analytics already established; `computeWeeklyStreak`/`computeMonthlyStreak` generalize the day-streak's own "consecutive run" shape to Monday-start weeks and calendar months; `computeGoalStatistics`/`buildDashboardGoalsWidgetData`/`buildGoalDeadlineEvents` are pure projections, not new calculations.
+- **Documented simplification:** "average completion time" (a Statistics figure) only ever averages `period = 'total'` goals' `completed_at - created_at`. A recurring goal's periods reset forever, so it has no single honest "time to completion" a plain average could represent - averaging it anyway would fabricate precision the data doesn't support, the same reasoning Advanced Analytics' own currency-conversion/company-size notes already established.
+- `GoalService` (`services/goal.service.ts`) - Pro-gated via `BillingService.requireProPlan` on every entry point (reused, not duplicated - the same check Export/Smart Job Import/Advanced Analytics/Calendar already use), sharing one internal `loadContext` bulk-fetch (applications, status history, this user's goals) across `getGoalsPageData`/`getDashboardWidgetData` so the dashboard widget never re-fetches applications a second time. Lazily persists a `total` goal's `completed_at` the first time its progress is detected as complete (best-effort - a failed write never blocks the page). `listGoalsWithProgressForCalendar` (used only by `CalendarService`) deliberately does **not** re-check the Pro plan, mirroring `InterviewFeedbackService.listAllForUser`'s own precedent: the caller's own single Pro-gated entry point already covers the whole read.
+- `AchievementService` (`services/achievement.service.ts`) - "Achievements unlock automatically": since this application has no background job/cron, "automatic" means evaluated and persisted lazily on the next read (the same lazy-detect-and-persist shape `CompanyService.findOrCreateByName`, Phase 32, already established for a different table). A concurrent double-unlock race (23505 unique violation) is treated as "already unlocked," not an error - and, unlike a first draft of this logic, is still included in the returned unlocked set (an unlock that lost the race is still a real, true unlock).
+- **Calendar integration:** `CalendarEventType` gained an 11th value, `goal_deadline` (never stored - derived the same way every status-derived event already is), and `CalendarEvent` gained an optional `goalCompleted` flag. `CalendarService.getEvents` now also fetches `GoalService.listGoalsWithProgressForCalendar` and merges one deadline event per active, recurring goal (at its current period's end date) into the same event list every filter/search/sort already operates on - not a parallel path. "Completed goals should appear visually": `CalendarEventIcon` gained a `completed` prop that overrides the dot color to emerald and the icon to a checkmark, independent of the underlying event type.
+- **Dashboard integration:** `GoalService.getDashboardWidgetData` reuses the exact same bulk computation as the Goals page itself, reshaped into a compact projection (today's application count, active weekly goals, recently unlocked achievements, upcoming deadlines) - never a second calculation.
+
+### UI
+
+- `app/(dashboard)/goals/page.tsx` (new route, `ROUTES.GOALS`, a sidebar nav item) - a `FORBIDDEN` result renders `GoalsGate` (mirrors `CalendarGate`/`AdvancedAnalyticsGate`), the existing `UpgradeDialog` open by default - "do not create a new entitlement system."
+- `GoalsBoard` groups goals into Active/Paused/Archived sections, each with its own empty state; the page-level empty state ("No active goals." / "Create your first goal.") only shows when the user has no goals at all.
+- `GoalCard` shows the progress bar/current/target/remaining/percentage/estimated-completion-date, and an actions menu (Edit, Pause ↔ Reactivate, Archive, Delete) - Delete is confirmed via the existing `ConfirmDialog` (mirrors `ApplicationDetailActions`'s own Archive confirmation), and is a genuinely different operation from Archive (a visible `status`, not a removal).
+- `StreakSummaryCard`/`AchievementsGrid`/`GoalStatisticsCards` render the already-computed streak summary/achievement states/statistics directly - no client-side recalculation.
+- `GoalsDashboardWidget` - a `FORBIDDEN` result renders a compact teaser (an "Upgrade" button opening the existing `UpgradeDialog` only on click, never automatically) instead of the full `GoalsGate`, the same "attempt the action, react to FORBIDDEN" pattern `ExportMenu` established for a passive dashboard surface rather than a click-triggered one.
+- `billing.constants.ts`: `PLAN_FEATURE_ROWS`'s "Goals" row is no longer marked `comingSoon` (it's real now, following the same precedent Calendar's own flip set in Phase 34); "Reminders" remains the only `comingSoon` row. `PRO_BENEFITS` updated accordingly.
+
+### Documentation updated
+
+- `API.md` - new "Goals" section (`GET /goals`, `POST /goals`, `PATCH /goals/:id`, pause/reactivate/archive, delete), all Pro-gated; a new "Dashboard Goals Widget" subsection under "Dashboard" noting its independent Pro gate.
+- `USER_GUIDE.md` - new "Goals, Achievements & Progress (Pro)" section (setting a goal, tracking progress, managing goals, streaks, achievements, statistics, the Dashboard widget, the Calendar integration); Table of Contents and every subsequent section renumbered; "Plans & Billing" and FAQ updated, including FAQ entries on period resets, achievement permanence, and the not-yet-built Custom goal type.
+- `DATABASE.md` - new `goals` and `user_achievements` tables, and the `goal_metric`/`goal_period`/`goal_status` enums, documented alongside `calendar_events`.
+
+### Testing
+
+- No component-rendering tests, per this suite's existing philosophy. Added: `goal-calculations.test.ts` (period windows for all five periods, metric-window counting for all four metrics, estimated-completion-date extrapolation and its "not enough data" cases, full progress computation, display-title fallback, weekly/monthly streak counting including a year rollover and a broken-streak case, statistics scoped correctly to `total` goals only, goal-deadline event building including the `goalCompleted` flag, and the dashboard widget projection); `achievement-calculations.test.ts` (every achievement predicate, including that interview/offer achievements read history facts rather than `current_status`); `achievement.service.test.ts` (the unlocked-read failure path, skipping already-unlocked achievements, persisting newly-earned ones, the unique-violation race still counting as unlocked, and a best-effort non-conflict failure not blocking the rest); `goal.service.test.ts` (the Pro gate on every method, the shared bulk-fetch context, lazy `total`-goal completion persistence including the "don't re-persist" case, that the Calendar-facing method skips the Pro re-check, and goal CRUD including title-trimming and not-found handling); `goal.schema.test.ts` (metric/period restriction, target coercion/positivity/integer validation); and new tests added to `calendar.service.test.ts` for the goal-deadline merge and its error propagation.
+- `npm run typecheck`, `npm run lint`, `npm run test` (355 tests, 30 files - 5 new files, 80 new tests), and `npm run build` all pass, including the new `/goals` route being correctly collected.
+- Not verified in a browser or against a live database in this environment - same persistent limitation as every phase since Phase 4.
+
+---
+
+## Phase 36 — Notification Center & Smart Reminders (2026-07-24)
+
+Added a centralized, Pro-only Notification Center (`/notifications`, reached via a new bell icon in the top navigation with a live unread-count badge) that proactively surfaces stale applications, upcoming interviews, goal progress, achievement unlocks, and calendar events - replacing what would otherwise be a simple, standalone reminder system with one that reuses every relevant piece of existing infrastructure instead of re-implementing any of it.
+
+### Phase numbering note
+
+This session's instructions labeled this "Phase 36," which conflicts with `IMPLEMENTATION_ORDER_V2.md`'s own Phase 36 ("CV/Resume File Attachment," unimplemented, depending on its own Phase 35 "Supabase Storage Configuration"). Recorded under this label only to match the session's own request, per the same practice established at Phase 31/34/35 - it does not claim or displace the document's actual Phase 36.
+
+### Architecture: nothing about a notification is stored except its state
+
+Every notification is generated live, on every read, from data this application already computes elsewhere - never a second, parallel calculation, and never a queue of accumulating "notification" rows:
+
+- **Application** (becoming stale / no activity for N days / follow-up recommended - one continuous severity ladder, only the highest tier reached fires) reads the `application_submitted` Calendar event every applied-to application already has (company/position/status), cross-referenced with the bulk status-history read for "most recent change of any kind" - a genuinely new, small calculation (`buildLastChangeDateByApplication`), since `ApplicationHistoryFacts` (Phase 29/33) only tracks specific *named* stage timestamps, not "last change regardless of stage."
+- **Interview** (today/tomorrow) and **Calendar** (today's events/upcoming events, everything else within a week) both read directly off `CalendarService.getEvents`' own already-merged event list (derived status-history events + custom events + goal-deadline events) - "Interview in one hour" is deliberately not built: `event_date` is a date, not a timestamp, so there is no honest time-of-day data to base it on.
+- **Goal** (weekly goal completed / behind schedule / deadline approaching / close to target) reads each goal's already-computed `GoalProgress` (`GoalService.getGoalsPageData`) wholesale - no metric is recalculated; "close to target" reuses the exact 0.8 ratio Phase 31.5's Usage Indicator warning already established rather than inventing a second threshold.
+- **Achievement** (achievement unlocked) reads the same `AchievementState[]` `GoalService.getGoalsPageData` already returns (which itself calls `AchievementService.evaluateAndUnlock`) - one permanent notification per unlocked achievement, since an achievement never re-unlocks.
+- **General** (welcome, tips) is the only category reading anything outside Calendar/Goals - `auth.users.created_at` (already returned by `AuthService.getCurrentUser()`, no new query) gates a time-boxed welcome message; a "set a goal" tip fires only when the user's own `goalsWithProgress` list (already fetched) is empty.
+- New table `notification_states` (migration `20260724090000_notification_states.sql`) holds only a deterministic `notification_key` (e.g. `application:no_activity:<application_id>`, `achievement:unlocked:<key>`) and its `status` (`unread`/`read`/`archived`) - regenerating the full notification list on every page load always reattaches the same state to the same logical notification, and nothing about a notification's actual content is ever persisted or can go stale in the database.
+- `NotificationService` - Pro-gated via `BillingService.requireProPlan` (reused, not duplicated); its only two dependencies are `CalendarService.getEvents` and `GoalService.getGoalsPageData` (plus the new state-only Repository) - "no duplicated scheduling logic," "reuse GoalService," "reuse AchievementService" are satisfied by depending on those Services wholesale rather than re-deriving anything they already compute.
+- **Documented performance tradeoff:** every read re-runs the full generation (both dependencies' own bulk fetches), since notification content is never cached. This mirrors the same per-page-load cost every other Pro-gated feature already accepts (Calendar/Goals/Advanced Analytics each independently bulk-fetch on their own page load) - the nav bell's badge count is the one place this cost now runs on *every* dashboard page, mitigated by `BillingService.requireProPlan` short-circuiting immediately for Free plan users before any bulk fetch happens. A future phase could add caching if this proves too slow in practice.
+- **Bug caught during its own test-writing, fixed before merge:** `AchievementService.evaluateAndUnlock`'s handling of a concurrent unlock race (23505 unique violation) originally dropped that achievement from its returned set entirely, even though the conflict itself proves it's genuinely unlocked - fixed to still include it (with an approximated timestamp, since the winning row's own `unlocked_at` isn't returned by the losing insert).
+
+### UI
+
+- `app/(dashboard)/notifications/page.tsx` (new route, `ROUTES.NOTIFICATIONS`, reached via the nav bell rather than a sidebar item, mirroring Search's own precedent) - a `FORBIDDEN` result renders `NotificationsGate` (mirrors `GoalsGate`/`CalendarGate`), the existing `UpgradeDialog` open by default.
+- `NotificationBell` (new, in `TopNav` via a new `notificationBell` slot on `MainLayout`/`TopNav`, the same prop-injection pattern `search`/`exportMenu` already established) - always visible regardless of plan, with a badge only when the (Pro-gated) unread count succeeds.
+- `NotificationsList` groups by Today/Yesterday/This Week/Older (each omitted when empty); `NotificationCard` shows icon/title/description/timestamp/read-unread state/optional action button, plus per-notification Mark as read/Archive/Delete; `NotificationHeaderActions` adds the bulk Mark all as read/Delete all read actions.
+- `NotificationFilterBar` - URL-searchParams-driven, mirroring `CalendarFilterBar`/`AdvancedAnalyticsFilterBar`'s existing pattern (unread-only, category, company, date range, search); `applicationId` is supported by the underlying schema/filter function but has no dedicated picker in this filter bar, since no existing filter bar in this codebase surfaces a raw "pick one application" control either.
+- `NotificationsDashboardWidget` - a `FORBIDDEN` result renders a compact teaser (an "Upgrade" button opening the existing `UpgradeDialog` only on click) instead of the full gate, the same pattern `GoalsDashboardWidget` already established for a passive dashboard surface.
+- `billing.constants.ts`: `PLAN_FEATURE_ROWS`'s "Reminders" row (previously `comingSoon`, since Phase 34 only ever built a Reminder *event type*, not delivery) is no longer marked `comingSoon` - this phase is what actually delivers it; a new "Notification Center" row names the feature itself. `PRO_BENEFITS` updated accordingly.
+
+### Documentation updated
+
+- `API.md` - new "Notifications" section (`GET /notifications` with its filters, mark-read/mark-all-read/archive/delete/delete-all-read), all Pro-gated; a new "Dashboard Notifications Widget" subsection under "Dashboard."
+- `USER_GUIDE.md` - new "Notification Center & Smart Reminders" section (where notifications come from, grouping, managing, filtering/search, the Dashboard widget); Table of Contents and every subsequent section renumbered; "Plans & Billing" and FAQ updated, including a revised FAQ entry on Calendar Reminders now correctly describing this phase's notification surfacing.
+- `DATABASE.md` - new `notification_states` table and `notification_status` enum, documented alongside `user_achievements`.
+
+### Testing
+
+- No component-rendering tests, per this suite's existing philosophy. Added: `notification-calculations.test.ts` (every category's generation logic - all three application severity tiers and their exclusivity, terminal-status exclusion, interview today/tomorrow matching, calendar-category exclusion of already-covered event types, all four goal notification tiers and their priority ordering, achievement notification keying, welcome/tip gating, the full merge/sort in `buildNotifications`, state merging, every filter individually, and recency grouping including archived exclusion and the today/yesterday/this-week/older boundaries in both time directions); `notification.service.test.ts` (the Pro gate on every method, that `getNotifications` reuses `CalendarService`/`GoalService` wholesale with no independent Application/Status History fetch, error propagation from both dependencies, state-merge correctness for `unreadCount`, and mark-all-as-read/delete-all-read correctly scoping to exactly the currently-unread/read keys); `notification.schema.test.ts` (filter fallback-to-default behavior, key non-emptiness validation).
+- `npm run typecheck`, `npm run lint`, `npm run test` (416 tests, 33 files - 3 new files, 61 new tests), and `npm run build` all pass, including the new `/notifications` route being correctly collected.
+- Not verified in a browser or against a live database in this environment - same persistent limitation as every phase since Phase 4.
+
+---
+
+## Phase 37 — Landing Page & Marketing Website (2026-07-24)
+
+Added a complete, public-facing marketing site (Home, Features, Pricing, About, Contact, Privacy, Terms) with full SEO (metadata, OpenGraph, Twitter Cards, canonical URLs, robots.txt, sitemap.xml, JSON-LD) - entirely additive, with zero changes to any dashboard feature, Service, or Repository.
+
+### Phase numbering note
+
+This session's instructions labeled this "Phase 37," which conflicts with `IMPLEMENTATION_ORDER_V2.md`'s own Phase 37 ("Tags / Skills + Skill Analytics," unimplemented). Recorded under this label only to match the session's own request, per the same practice established at Phase 31/34/35/36 - it does not claim or displace the document's actual Phase 37.
+
+### Route conflict: why the pricing page is at /plans, not /pricing
+
+The dashboard already owns `/pricing` (`(dashboard)/pricing/page.tsx`, Phase 31.5) - a logged-in-only page (its wrapping `(dashboard)/layout.tsx` redirects any signed-out visitor to `/login` before the page itself ever runs). Next.js cannot resolve two different `page.tsx` files to the same path, and this task's own scope ("does NOT modify the dashboard application") explicitly excludes touching that route or its layout. Asked directly, the user chose to leave `(dashboard)/pricing` completely untouched and serve the new public pricing page at `/plans` instead - a real, load-bearing route naming decision, not an incidental one.
+
+### Architecture
+
+- New `(marketing)` route group (`src/app/(marketing)/{layout,page,features,plans,about,contact,privacy,terms}`) - entirely separate from `(auth)`/`(dashboard)`, neither of which this phase touches. `(marketing)/layout.tsx` has no auth check at all (unlike `(dashboard)/layout.tsx`) - every page here is meant to be reachable by anonymous visitors.
+- The previous root `src/app/page.tsx` (a pure "redirect to `/dashboard` or `/login`" stub - see its own comment: "no marketing Landing Page yet ... future work") is replaced by `(marketing)/page.tsx`, which keeps the one part of that stub still worth keeping - an already-signed-in visitor still lands on `/dashboard`, never marketing chrome - and renders the real homepage for everyone else.
+- New feature `src/features/marketing/{constants,components,utils}` - purely presentational, no Service/Repository (there is no business logic to own; every fact it states - the Free plan's application limit, which features are Pro-only - is read from existing constants like `FREE_PLAN_APPLICATION_LIMIT`/`PLAN_FEATURE_ROWS`, never restated by hand).
+- **"Reuse existing pricing components":** `/plans` renders `<PricingPlans isPro={false} />` (Phase 31.5) verbatim - no new pricing-comparison logic was written. Its "Upgrade to Pro" button is still that phase's own placeholder (no real Checkout exists yet), so the actual conversion path on this page is a "Sign up free" button underneath it.
+- **"Dashboard screenshots" (Home hero):** `DashboardMockup.tsx` is an illustrative mockup built entirely from already-installed UI primitives (`Card`/`Progress`), not a literal screenshot - this environment has no way to capture a real one, and presenting a fabricated image as a genuine product screenshot would be dishonest. Same reasoning for the OpenGraph image (`(marketing)/opengraph-image.tsx`, rendered server-side via `next/og`'s `ImageResponse` from real JSX - a genuine generated image, not a fake asset).
+- **"Testimonials placeholder":** `TESTIMONIAL_PLACEHOLDERS` uses generic role labels ("Job Seeker," "Career Changer") and explicitly-placeholder quote text - no fabricated names, companies, or photos presented as real endorsements. Meant to be replaced once real testimonials exist.
+- **Contact page:** a direct `mailto:` link, not a contact form - this application has no email-sending infrastructure anywhere (no provider like Resend/SendGrid), and a form that silently goes nowhere would be worse than an honest, working email link. New `siteConfig.supportEmail`.
+- **Privacy/Terms pages:** scoped to what this application actually does (Supabase Postgres storage with RLS, Stripe for Pro billing, a single essential session cookie, CSV/JSON export via the existing Export feature) - no claims about compliance frameworks or self-service capabilities (e.g. account deletion) this app hasn't actually built; both direct that request to `siteConfig.supportEmail` instead.
+- New shared UI primitive `src/shared/components/ui/accordion.tsx` (Base UI's already-installed `@base-ui/react/accordion`, no new dependency) - backs the FAQ section, this codebase's first collapsible list.
+- **SEO:** `src/app/robots.ts`/`sitemap.ts` (Next.js file conventions, rendered as `/robots.txt`/`/sitemap.xml`) - every `(dashboard)` route is disallowed/excluded, since none of them are indexable (login-gated) anyway. `src/features/marketing/utils/seo.ts` (pure): `buildCanonicalUrl` (the one place `env.appUrl` is joined against a path - `robots.ts`/`sitemap.ts`/every marketing page's `metadata.alternates.canonical` all reuse it), `buildOrganizationJsonLd`/`buildWebsiteJsonLd`/`buildFaqJsonLd` (the FAQ page's structured data is built from the exact same `FAQ_ITEMS` list the visible FAQ accordion renders, so the two can never drift apart). Root `layout.tsx` gained `metadataBase` (so relative OG/Twitter images resolve absolutely) and default `openGraph`/`twitter` fields.
+- **Performance:** every marketing page except the homepage (which needs the signed-in-redirect check) is a fully static Server Component with no data fetching at all - confirmed by `npm run build`'s own route table (○, prerendered). Fonts were already optimized via `next/font/google` (Phase 1) - reused as-is, nothing new needed. No raster image assets were added anywhere (the hero mockup and OG image are both generated from JSX/CSS), so there is nothing new to lazy-load or compress.
+- **Bug caught and fixed before merge:** the Contact page's first draft passed the support email as `render`'s own child text (`render={<a>{email}</a>}`) *and* separate `Button` children ("Email us") - Base UI's `render` prop replaces the rendered element's children with the `Button`'s own, so the email text would have silently never appeared. Fixed to pass the email as the `Button`'s only children.
+
+### Documentation updated
+
+- `USER_GUIDE.md` - new "Before you sign in: the public website" note under Introduction, pointing prospective users at Features/Pricing/About/Contact/Privacy/Terms before they ever create an account.
+- `CHANGELOG.md` - this entry.
+
+### Testing
+
+- No component-rendering tests, per this suite's existing philosophy - the marketing pages/sections themselves (Hero, Header, Footer, feature grid, testimonials, FAQ) are presentational only and untested, matching how this codebase has never tested purely-presentational components. Added: `seo.test.ts` (canonical URL resolution, and that both JSON-LD builders return correctly-shaped, non-fabricated structured data derived from their inputs); `robots.test.ts` (every dashboard route disallowed, sitemap URL present); `sitemap.test.ts` (every public page included, every dashboard route absent, home page has the highest priority, every URL is valid/absolute).
+- `npm run typecheck`, `npm run lint`, `npm run test` (430 tests, 36 files - 3 new files, 14 new tests), and `npm run build` all pass - the build's own route table confirms `/`, `/features`, `/plans`, `/about`, `/contact`, `/privacy`, `/terms`, `/robots.txt`, and `/sitemap.xml` are all correctly collected, and that the existing `/pricing` (dashboard) route is completely unaffected.
+- Not verified in a browser or against a live database in this environment - same persistent limitation as every phase since Phase 4.
+
+---
+
+## Phase 38 — Production Billing (2026-07-24)
+
+Replaced every Phase 31.5 UI-only billing placeholder with real Stripe integration: Checkout (Monthly/Yearly), the Customer Portal, and full production webhook handling - `BillingService`'s existing entitlement contract, the `subscriptions` schema, and every call site of `UpgradeButton`/`ManageSubscriptionButton` are all reused completely unchanged in shape, only their behavior became real.
+
+### Phase numbering note
+
+This session's instructions labeled this "Phase 38," which conflicts with `IMPLEMENTATION_ORDER_V2.md`'s own Phase 38 ("Application Goals / Weekly Objectives," already implemented under a different label at this session's own "Phase 35"). Recorded under this label only to match the session's own request, per the same practice established at Phase 31/34/35/36/37 - it does not claim or displace the document's actual Phase 38.
+
+### Architecture
+
+- **Reuse, not redesign:** the three-Service split this feature already had (`BillingService` for entitlements, `BillingWebhookService` for event processing) gained exactly one new sibling, `BillingCheckoutService` (Checkout Session + Customer Portal session creation) - neither existing Service was restructured. `BillingRepository`/`BillingWebhookRepository` kept their existing shapes, only gaining new fields/methods.
+- **Database (`Never duplicate data already managed elsewhere`):** `subscriptions` gained exactly three new columns - `billing_interval` (mirrors the subscribed Price's own `recurring.interval`), `cancel_at` (the "Cancellation Date" - Stripe's `cancel_at` if scheduled, else `canceled_at` if already ended), and `latest_invoice_id`. `plan`/`status`/`stripe_customer_id`/`stripe_subscription_id`/`current_period_end` (the "Renewal Date") are all reused exactly as Phase 23 defined them - no redundant "renewal_date" or "payment_status" column was added (payment status is derived from `status` alone, `past_due`/`unpaid`, in `SubscriptionSection`).
+- **Entitlement derivation, the one place it happens (`BUSINESS_RULES.md` "Billing"):** `BillingWebhookService.derivePlanFromStatus` maps Stripe's own subscription status to `plan` - `trialing`/`active`/`past_due` grant Pro (a failed renewal charge starts a grace period, retryable through the Customer Portal, rather than instantly revoking access), every other status reverts to Free. This is the exact rule `BUSINESS_RULES.md` had already documented in Phase 23 as "unreachable... until the eventual Checkout implementation" - this phase is that implementation.
+- **Customer linking:** `checkout.session.completed`'s `client_reference_id` (set to the user's own id when `BillingCheckoutService.createCheckoutSession` creates the session) is resolved back to a `subscriptions` row by the new `BillingWebhookRepository.linkStripeCustomer` - closing the exact gap `syncByStripeCustomerId`'s own Phase 23 comment had flagged ("a stripe_customer_id with no matching row means Checkout hasn't linked it to a user yet").
+- **One shared sync path for every subscription-shaped event:** `customer.subscription.created`/`updated`/`deleted`/`resumed`/`paused` are all handled by the exact same `buildSubscriptionFields`/`syncSubscription` pair - Stripe's payload for each is always the subscription's full current state, never a delta, so there is exactly one place this mapping happens ("avoid duplicated logic"). `invoice.payment_succeeded`/`payment_failed` only ever touch `latest_invoice_id` - `status` is already kept correct by the `subscription.updated` event Stripe fires alongside a failed/recovered renewal, so entitlements are never redecided a second time from an invoice event.
+- **Idempotency ("Duplicate Events"):** a new `stripe_webhook_events` table (id = the Stripe event id) is checked *before* processing and recorded only *after* a fully successful process - a genuine retry of an already-processed event is recognized and skipped, while a failed attempt (never recorded) stays retryable on Stripe's next delivery. A true concurrent double-delivery racing past the check is an accepted, harmless edge case: every sync here sets columns to their latest known state, never increments/appends.
+- **Error handling** ("Expired Checkout Session," "Missing Customer," "Missing Subscription," "Network Errors"): every Stripe API call in `BillingCheckoutService` is wrapped in try/catch, translating any failure into the same generic, friendly `ActionResult` error shape every other Service in this codebase already uses - never a raw Stripe/network exception reaching the client. Already-Pro users are rejected before Stripe is ever called; a Checkout attempt with no configured Price id for the requested interval fails the same friendly way. `createBillingPortalSession` returns Not Found when no Stripe customer is linked yet, rather than crashing.
+- **"Products and Prices must be configurable through environment variables. Never hardcode Price IDs":** `STRIPE_PRO_MONTHLY_PRICE_ID`/`STRIPE_PRO_YEARLY_PRICE_ID` (new), read only by `getStripeProPriceId` (`lib/stripe.ts`) - `BillingCheckoutService` never touches `process.env` directly. Free has no Stripe product/price at all.
+- **Test Mode / Live Mode:** determined entirely by which `STRIPE_SECRET_KEY` is configured (`sk_test_...` vs `sk_live_...`) - no code path branches on an environment flag, so no code change is needed to switch between them.
+
+### Server Actions & UI
+
+- New `src/features/billing/actions/billing.actions.ts`: `createCheckoutSessionAction(interval)` and `createBillingPortalSessionAction()` - both call Next's `redirect()` to the Stripe-hosted URL on success (the only "success" outcome; there is nothing to return to the caller), or return a friendly `ActionResult` error otherwise. "Use server-side actions only": neither is a JSON API route.
+- `UpgradeButton`/`ManageSubscriptionButton` - the exact same components every existing call site (Pricing/Plans pages, Subscription section, Upgrade dialog, Limit Reached dialog) already rendered now call these real actions instead of showing a placeholder toast - **no call site needed to change** to get real Checkout/Portal behavior.
+- `PricingPlans`/`SubscriptionSection` - the Pro card/section now shows two `UpgradeButton`s ("Upgrade monthly"/"Upgrade yearly") instead of one, each passing its own `interval`. No dollar amount is displayed anywhere in this application's own UI - Stripe Checkout itself is the source of truth for price, and hardcoding a display price here risked silently drifting from whatever the configured Stripe Price actually charges.
+- `SubscriptionSection` also now shows **Billing interval** (Monthly/Yearly), a payment-failure banner (derived from `status` being `past_due`/`unpaid` - "PAYMENT FAILURE": "Display clear messaging when payment fails"), and a cancellation banner when `cancel_at` is set (relabeling "Renewal date" to "Ends on").
+- New `CheckoutReturnNotice` (Settings page): reads the `?checkout=success|cancelled` marker Stripe's own `success_url`/`cancel_url` redirect back with, shows a matching toast, then strips the param from the URL - it never re-verifies payment itself (the webhook alone is the source of truth for entitlements, "Never trust client-side state").
+
+### Documentation updated
+
+- `DATABASE.md` - `subscriptions`' three new columns and the new `subscription_billing_interval` enum documented; new `stripe_webhook_events` table.
+- `API.md` - new "Create Checkout Session"/"Create Billing Portal Session" endpoints under "Subscription"; new "Webhooks" section documenting every handled Stripe event type and the idempotency contract.
+- `USER_GUIDE.md` - "Plans & Billing" gained "Upgrading to Pro," "Managing your subscription," and "If a payment fails" subsections, replacing the placeholder-era description; two new FAQ entries (data safety on cancellation/payment failure; that payment details are never stored by this application).
+- `DEPLOYMENT.md` - documented the two new Price id environment variables and a complete, in-order "Production Billing Setup" walkthrough (Stripe Products/Prices, Customer Portal configuration, webhook endpoint/events, environment variables, Test Mode verification, then Live Mode cutover).
+- `BUSINESS_RULES.md` - the Phase 23 note describing the Pro-plan rule as "currently unreachable" is updated to describe Phase 38's actual `derivePlanFromStatus` mapping now that it is reachable.
+- `.env.example` - the two new Price id variables.
+
+### Testing
+
+- No component-rendering tests, per this suite's existing philosophy; Stripe itself is entirely mocked, never called for real. Added: `billing-webhook.service.test.ts` (idempotency - duplicate events skipped, events recorded only after success, a failed sync leaves the event retryable; every subscription-lifecycle event type synced through the shared path; every Stripe status correctly mapped to `plan`; `current_period_end`/`billing_interval` extraction; `cancel_at` preferring the scheduled date over the actual one, and falling back correctly; customer id resolution whether expanded or not; `checkout.session.completed`'s customer-linking and subscription-fetch-then-sync, including the "no subscription"/"no client_reference_id" graceful paths; invoice events recording only `latest_invoice_id`, including the "no customer" graceful path); `billing-checkout.service.test.ts` (already-Pro rejection, subscription-lookup failure, misconfigured Price id, reusing an existing Stripe customer vs. `customer_email`, a missing session url, Stripe/network failures for both Checkout and the Billing Portal, and the Billing Portal's "no customer yet" Not Found case). `billing.service.test.ts` (existing, unchanged) continues to pass entirely as-is - entitlement logic itself was never touched.
+- `npm run typecheck`, `npm run lint`, `npm run test` (468 tests, 38 files - 2 new files, 38 new tests), and `npm run build` all pass, including the existing `(dashboard)/pricing` route and the `/api/webhooks/stripe` Route Handler both continuing to compile and collect correctly.
+- Not verified against a real Stripe account, a live database, or in a browser in this environment - same persistent limitation as every phase since Phase 4. In particular, the full Checkout -> webhook -> UI-reflects-Pro round trip described in `DEPLOYMENT.md`'s new setup walkthrough has not been exercised end-to-end against Stripe's actual API.
+
+---
+
+## Phase 40 — UX Refinement & Workflow Simplification (2026-07-24)
+
+Workflow simplification, not a new feature phase: "creating an application is the central workflow" (this phase's own design principle) - Companies and CVs become supporting resources reachable inline, never a prerequisite. No breaking changes to the schema/architecture beyond the additive `cv_versions` file columns below; every existing relationship (FKs, uniqueness rules, RLS) is unchanged.
+
+### Phase numbering note
+
+This session's instructions labeled this "Phase 40," which conflicts with `IMPLEMENTATION_ORDER_V2.md`'s own Phase 40 ("Account Deletion / Danger Zone," not yet implemented under any label in this session). Recorded under this label only to match the session's own request, per the same practice established at every prior mismatched phase since 31.
+
+### New Application Workflow
+
+- `NewApplicationButton` (new): a single "+ New Application" entry point - opens a small choice dialog ("Import from job URL (Pro)" / "Create manually"), then hands off to the existing, unmodified `ImportJobDialog` (Smart Job Import, Phase 32) or `ApplicationFormDialog`. Replaces the old side-by-side "Import job" / "Create application" buttons on the Applications page, and the "Create application" button inside Dashboard's Quick Actions.
+
+### Company Selection
+
+- `CompanyCombobox` (new, `features/companies`): a type-to-filter combobox (wraps the `Combobox` shared primitive added in an earlier phase but never wired up until now) - typing filters the existing company list, and when nothing matches, a "Create '<query>'" row creates it inline via the same `createCompanyAction` `CompanyFormDialog` already uses. `ApplicationForm`'s Company field now uses this instead of a plain `Select`; a newly created company is appended to the form's own option list and selected immediately, with no page reload or refetch. The Companies page is unchanged code-wise, but its empty state now explains that companies are normally created from the application form.
+
+### CV Library (real file storage)
+
+- `cv_versions` gains four nullable columns - `file_path`, `file_name`, `file_size`, `uploaded_at` (migration `20260726090000_cv_file_storage.sql`) - and a new private Supabase Storage bucket, `cv-files` (5 MB limit, PDF only), with an RLS policy on `storage.objects` scoped to the object key's leading `<user_id>` segment - the same ownership check every table's own RLS policy already uses. This supersedes `DEPLOYMENT.md`'s previous "Supabase Storage should not be configured."
+- Every new CV version now requires a real PDF upload (`CVVersionService.create` uploads the file first, under a freshly generated id, then creates the row referencing it - the row is only created once the upload succeeds, and the upload is cleaned up if the row insert then fails, e.g. a concurrent duplicate name). CV versions created before this phase, which have no file, remain fully valid.
+- `CVVersionForm` now includes a PDF file field (required to create, optional "Replace PDF" when editing) alongside the existing name/description fields, submitted as `FormData` (the only way a `File` can reach a Server Action) - `createCVVersionAction`/`updateCVVersionAction` were updated accordingly.
+- `CVVersionsTable` gained a Download action (mints a short-lived signed URL via a new `getCVDownloadUrlAction`, available for archived rows too) and a File column.
+
+### CV Deletion
+
+- Per this phase's own explicit decision, **no hard-delete capability was added anywhere** - "permanent deletion" for an unused CV version is the existing archive (soft-delete) mechanism, just relabeled "Delete" in the UI, since an unused CV disappearing from every list is indistinguishable from a true delete. `CVVersionService.archive` itself is unchanged: it still unconditionally rejects archiving a CV version referenced by any application (`BUSINESS_RULES.md` "CV Rules" - unaffected by this phase). When that happens, `CVVersionsTable` now shows a dedicated "Can't delete" dialog with the exact reason (used by N applications) instead of a plain error toast, rather than offering a literal "Archive instead" action that would only fail the same way - a deliberate, narrower interpretation of the phase's own wording, chosen to avoid loosening a rule this codebase has enforced identically for Companies and CV versions since Phase 3.
+
+### Salary
+
+- `ApplicationForm` now shows a single "Salary (optional)" field. A new, form-only `applicationFormSchema` (separate from the existing, unchanged `createApplicationSchema` the Server Actions/Service still validate against) has one `salary` field; the form maps it to `salary_min = salary_max = salary` before calling the existing create/update actions - `salary_min`/`salary_max` remain the real columns, untouched, so any existing genuine range survives until the application is next edited and saved through this form. The Application Detail page's salary display (`formatSalary`, new pure util in `features/applications/utils/salary.ts`) now collapses an equal min/max into one value instead of showing e.g. "50000–50000 EUR".
+
+### Application Filters
+
+- `ApplicationFilterBar` now shows only Search/Status/Company by default; CV version/Source/Work mode/Employment type/Date range/Salary range/Sort live inside a collapsed "More filters" panel (reusing the `Accordion` primitive added in Phase 37, not a new disclosure component), auto-expanded whenever any of those filters is already active from the URL so an applied filter is never silently hidden.
+
+### Dashboard
+
+- `QuickActions` now renders only the single `NewApplicationButton`, replacing the previous three buttons (Create Company / Create CV / Create Application).
+
+### Follow-up: CV selection workflow redesign
+
+User feedback after the above: mixing "select an existing CV" and "create a new CV" inside one dropdown (via the "+ Upload new CV" item, which opened `CVVersionFormDialog` on top of the already-open application dialog) felt clunky - the dropdown grew unpredictably, the create option looked visually detached, and the nested-modal-on-modal flow was awkward. Resolved by treating them as the genuinely different actions they are, per this follow-up's own explicit design principle:
+
+- `ApplicationForm`'s CV field is now a plain `Select` of existing CV versions only - no inline creation, no nested dialog. `CVVersionFormDialog`'s optional `onSuccess` passthrough (added only to support the removed inline flow) was reverted along with it.
+- When the user has zero CV versions, the field shows a friendly empty state ("No CVs available. You need at least one CV before creating an application.") with a single "Open My CVs" link to the CV Versions page - never another modal.
+- Company selection is unaffected: the `CompanyCombobox` inline-create flow stays, since a company only ever needs a name (no file, no dedicated management form) - the tension this follow-up addresses is specific to CVs having a real, multi-field document-upload workflow that doesn't belong inside a lightweight application form.
+- CV creation, upload, replace, and download remain exclusively on the CV Versions page, unchanged from earlier in this phase.
+
+
+
+### Documentation updated
+
+- `DATABASE.md` - `cv_versions`' four new columns, and a new "Storage" section documenting the `cv-files` bucket.
+- `BUSINESS_RULES.md` - "CV Rules" now notes the new file requirement and explicitly confirms the archive-blocking rule (and the "no hard delete anywhere" architecture) is unchanged.
+- `DEPLOYMENT.md` - "File Storage" section updated (see below).
+- `USER_GUIDE.md` - updated for the new application workflow, company/CV inline creation, CV uploads, and simplified filters/salary field.
+
+### Testing
+
+- No component-rendering tests, per this suite's existing philosophy - `NewApplicationButton`, `CompanyCombobox`, `ApplicationForm`, `CVVersionForm`, `CVVersionsTable`, and `ApplicationFilterBar` are UI-only and not directly tested. Added: `cv-file-validation.test.ts` (PDF/size validation, byte formatting), `cv-version.service.test.ts` (new - this Service had no test file before this phase at all: upload-then-create ordering, cleanup on a failed insert, file validation, replace-in-place, signed download URL), and `salary.test.ts` (range/single-value/partial-range formatting).
+- `npm run typecheck`, `npm run lint`, and `npm run test` all pass (see final count below).
+
+### Bug fix follow-up: expected states shown as generic errors
+
+Reported as a bug affecting CV Library, Analytics, Calendar, Goals, Pricing, and Settings' Subscription section: expected business states ("no data yet," Free plan, no subscription record) allegedly rendering as a generic "Something went wrong while loading..." error instead of a proper empty/upgrade state.
+
+Investigating each of the six areas end-to-end (page -> Service -> Repository) found that five already implement the correct distinction, with no change needed:
+
+- **CV Library / Goals / Calendar / Pricing / Settings**: every Repository read that can legitimately return zero rows already uses `.maybeSingle()` or a plain `.select()` (never `.single()`, which is the classic cause of this exact bug - it errors on zero rows). Every Service already null-coalesces an absent/empty result (`data ?? []`, `data ?? null`) rather than treating it as a failure, and only maps a *genuine* repository `error` to `INTERNAL_ERROR`. Free-plan gating is its own `FORBIDDEN` error code, which Calendar's and Goals' pages already branch on to render `CalendarGate`/`GoalsGate` (the upgrade teaser) instead of the error paragraph. A missing `subscriptions` row (Pricing/Settings) already resolves to `data: null` -> `isPro = false` -> Free plan, never an error - and in practice every user gets a row eagerly at signup via the `handle_new_user` trigger anyway. `CVVersionsTable`/`GoalsBoard`/`CalendarAgendaView`/`CalendarWeekView` all already render a dedicated empty state when their list is empty.
+- **Analytics** was the one genuine gap: `AnalyticsService.getSummary` already degraded to zeroed-out data correctly (not an error), but `analytics/page.tsx` had no page-level notion of "zero applications" at all - it rendered every one of its nine widgets in their individually empty/zeroed form (0% rate cards, an empty funnel, an empty insights list, nine separate "no X data yet" mini-messages), which reads as a broken/half-loaded page rather than one clear "you haven't started" state, even though nothing was actually erroring.
+
+Fixed the Analytics gap explicitly rather than inferring it indirectly: `AnalyticsSummary` gained a `totalApplications: number` field (`AnalyticsService.getSummary` now returns `applications.length` directly, the same array it already had in scope), and `analytics/page.tsx` branches on `totalApplications === 0` to render one `EmptyState` ("No analytics yet" + a "Create your first application" link) instead of the full widget grid.
+
+No schema, Repository, or business-rule changes were needed for this fix - it is UI/Service-shape only, and purely additive to `AnalyticsSummary`.
+
+### Testing (bug fix)
+
+- `analytics.service.test.ts`: added a `getSummary` describe block (previously untested directly, only via `analytics-calculations.test.ts`'s pure-function coverage) - asserts `totalApplications: 0` for a user with no applications, and that it matches the fetched application count otherwise.
+- `npm run typecheck`, `npm run lint`, `npm run test` (519 tests, 42 files), and `npm run build` all pass.
+
+---
+
+## Phase 39 — Production Readiness Audit (2026-07-25)
+
+A full audit of all 38 phases before it - codebase, security, performance, database, accessibility, error handling, logging, monitoring, dependencies, and test coverage - introducing no user-facing feature. Full findings, severity ranking, and reasoning: `docs/PRODUCTION_AUDIT_REPORT.md`.
+
+### Phase numbering note
+
+This session's instructions labeled this "Phase 39," which conflicts with `IMPLEMENTATION_ORDER_V2.md`'s own Phase 39 ("Service-Role Client Introduction," already implemented under a different label at this session's own "Phase 23"). Recorded under this label only to match the session's own request, per the same practice established at every prior mismatched phase since 31 - it does not claim or displace the document's actual Phase 39.
+
+### Critical finding, resolved during the audit
+
+- `next@16.2.10` (the exact version this project had installed) carried multiple high-severity CVEs affecting Server Actions and App Router middleware directly - including unauthenticated disclosure of internal Server Function endpoints, an SSRF in Server Actions, and a middleware/proxy bypass. Upgraded to `16.2.11` (a safe patch release, not a major bump); re-auditing afterward confirms none of these remain reachable. `npm run typecheck`/`lint`/`test`/`build` all still pass.
+
+### Fixes applied
+
+- **Database:** dropped three single-column indexes made redundant by a composite index/unique constraint sharing the same leading column (`goals_user_id_idx`, `user_achievements_user_id_idx`, `notification_states_user_id_idx`) via a new migration (`20260725090000_audit_cleanup.sql` - never editing an already-shipped one).
+- **Dependencies:** `shadcn` (the CLI-only component-scaffolding tool, never imported by application code) moved from `dependencies` to `devDependencies`.
+- **Error handling:** added root `error.tsx` (Client Component, with a "Try again"/"Back to Dashboard" recovery path) and `not-found.tsx` - neither existed anywhere before, so an unhandled exception or a missing route fell through to Next's generic default pages. Added `loading.tsx` to five routes that never got one (`/calendar`, `/goals`, `/notifications`, `/pricing`, `/search`), using the exact `<PageSkeleton />` pattern every other route already used.
+- **Security headers:** `next.config.ts` now sends `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, and `Strict-Transport-Security` on every response. A Content-Security-Policy was deliberately not added - see the audit report's own reasoning (needs live-browser verification this environment cannot perform).
+- **Monitoring:** added `src/lib/monitoring.ts` - a vendor-agnostic `captureException`/`captureMessage`/`trackEvent` facade (console-based today, no new dependency), wired into the new `error.tsx` boundary. Swapping in a real provider later means editing this one file, never its call sites.
+- **Test coverage:** added `application.service.test.ts` (26 tests) - the single most central, most complex Service in the app (capacity gating, cross-table reference validation, Postgres constraint/FK-violation-to-friendly-message mapping) had no dedicated test file at all before this phase.
+- **Documentation accuracy:** corrected two `KNOWN_ISSUES.md` entries that had gone factually stale (`SUPABASE_SERVICE_ROLE_KEY remains unused` - false since Phase 23/38; the `postcss` advisory note - now also covers `sharp`, plus a new `shadcn`-only advisory note), and added a new Phase 39 entry for everything found but deliberately not fixed (rate limiting, CSP, Stripe/Supabase live verification, remaining untested Services, three still-unused `applications` columns, `env.ts`'s mixed public/private shape).
+
+### Confirmed already correct (no change needed)
+
+Every table has Row Level Security enabled (13/13); every RLS policy uses the `(select auth.uid())` performance pattern; every SQL statistics view is `security_invoker`; every `SECURITY DEFINER` function pins `search_path`; no table has ever been granted to `anon`; no hard `DELETE` has ever been granted anywhere; every Server Action authenticates before doing anything (verified across all 15 action files); no SQL injection surface exists; no secrets appear in any log statement; only one `dangerouslySetInnerHTML` call exists in the whole app (JSON-LD, rendering our own trusted data); no `page.tsx` anywhere is a Client Component; Stripe's Node SDK is never imported by a Client Component.
+
+### Documentation updated
+
+- `ARCHITECTURE.md` - new "Dependencies" section documenting why every runtime dependency exists.
+- `DEPLOYMENT.md` - "Monitoring" and "HTTPS" sections updated to describe the new hook module and security headers; "Deployment Checklist" now points to the audit report's "Blocking Production" list.
+- `KNOWN_ISSUES.md` - two stale entries corrected; a new Phase 39 section added for open findings.
+- `docs/PRODUCTION_AUDIT_REPORT.md` (new) - the complete audit: Critical/High/Medium/Low findings, recommendations, and what remains before real users are onboarded.
+
+### Testing
+
+- No component-rendering tests, per this suite's existing philosophy - this phase reviewed test coverage rather than rewriting existing tests (per its own "do not rewrite tests unnecessarily"). Added: `application.service.test.ts` (capacity gating, reference-validation success/failure for both company and CV version, parallel-not-sequential validation, every Postgres constraint/FK-violation mapping including the generic fallback, trimming/normalizing/currency-uppercasing on success, and not-found/success paths for update/archive/restore/getById/list/listArchived/listAllForAnalytics/listAllIncludingArchived).
+- `npm run typecheck`, `npm run lint`, `npm run test` (494 tests, 39 files - 1 new file, 26 new tests), and `npm run build` all pass, on the upgraded `next@16.2.11`.
+- Not verified in a browser, against a live Supabase project, or against a real Stripe account in this environment - same persistent limitation as every phase since Phase 4, and the report's own top recommendation for what to do before onboarding real users.

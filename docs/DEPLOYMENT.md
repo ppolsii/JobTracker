@@ -220,7 +220,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 ---
 
-Required for the billing webhook (Version 2, Phase 23)
+Required for billing (Version 2, Phase 23 infrastructure; Phase 38 production Checkout/Portal/webhooks)
 
 SUPABASE_SERVICE_ROLE_KEY
 
@@ -228,13 +228,19 @@ Used only by `src/lib/supabase/admin.ts`, called only from `src/features/billing
 
 STRIPE_SECRET_KEY
 
-Used only by `src/lib/stripe.ts`, called only from the webhook Route Handler.
+Used by `src/lib/stripe.ts` - the webhook Route Handler, and (Phase 38) `BillingCheckoutService` for creating Checkout Sessions and Customer Portal sessions. A `sk_test_...` key runs the application in Stripe Test Mode; a `sk_live_...` key runs it in Live Mode - this is the *only* thing that determines which mode the application runs in, no separate application setting exists.
 
 STRIPE_WEBHOOK_SECRET
 
-Used only by `src/lib/stripe.ts`, to verify that an incoming webhook request genuinely came from Stripe.
+Used only by `src/lib/stripe.ts`, to verify that an incoming webhook request genuinely came from Stripe. Get this from the Stripe Dashboard's Webhooks page (or `stripe listen` for local development) - it is specific to each webhook endpoint you configure, so Test Mode and Live Mode each have their own value.
 
-All three are read lazily (not required for the application to build or start) - only a request to `/api/webhooks/stripe` depends on them. No Stripe checkout, subscription enforcement, or billing UI exists yet (`IMPLEMENTATION_ORDER_V2.md` Phase 23 is infrastructure only).
+STRIPE_PRO_MONTHLY_PRICE_ID
+
+STRIPE_PRO_YEARLY_PRICE_ID
+
+Version 2, Phase 38. The Stripe Price ids for the Pro plan's two billing intervals ("STRIPE PRODUCTS": "Products and Prices must be configurable through environment variables. Never hardcode Price IDs.") - create one Product ("Pro") with two recurring Prices (Monthly, Yearly) in the Stripe Dashboard, then copy each Price's id (`price_...`) here. The Free plan has no Stripe product or price at all - it's this application's default, with no Checkout involved.
+
+All five are read lazily (not required for the application to build or start) - only an actual Checkout/Portal attempt or a request to `/api/webhooks/stripe` depends on them.
 
 ---
 
@@ -242,7 +248,24 @@ Optional
 
 NEXT_PUBLIC_APP_URL
 
+Also used (Phase 38) to build Checkout's `success_url`/`cancel_url` and the Customer Portal's `return_url` - must be set to the application's real public URL in production (not the `localhost:3000` default) or Stripe will redirect users back to the wrong place after Checkout.
+
 NODE_ENV
+
+---
+
+# Production Billing Setup (Version 2, Phase 38)
+
+Complete, in-order steps to go from the code in this repository to real, working Stripe subscriptions:
+
+1. **Create the Stripe objects.** In the Stripe Dashboard (Test Mode first): create one Product named "Pro," then add two recurring Prices under it - one Monthly, one Yearly. Copy each Price's id into `STRIPE_PRO_MONTHLY_PRICE_ID`/`STRIPE_PRO_YEARLY_PRICE_ID`.
+2. **Configure the Customer Portal.** In the Stripe Dashboard's Billing → Customer Portal settings, enable: updating the payment method, viewing/downloading invoices, cancelling a subscription (at period end), and resuming a subscription scheduled to cancel. These are Stripe-hosted capabilities this application's Customer Portal button opens the door to - none of them are reimplemented in this codebase.
+3. **Configure the webhook endpoint.** In the Stripe Dashboard's Webhooks page, add an endpoint pointing at `https://<your-domain>/api/webhooks/stripe`, and subscribe it to exactly these events: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.subscription.resumed`, `customer.subscription.paused`, `invoice.payment_succeeded`, `invoice.payment_failed`. Copy the endpoint's signing secret into `STRIPE_WEBHOOK_SECRET`.
+4. **Set every environment variable above** in Vercel's Production environment (and, separately, Preview/Development if you want a working test flow there too - use Test Mode keys for those).
+5. **Test the full flow in Test Mode** before ever switching to a live key: sign up, upgrade (using one of [Stripe's test card numbers](https://docs.stripe.com/testing)), confirm the Settings page reflects Pro immediately after being redirected back, then use Manage Subscription to cancel and confirm it reverts to Free at the period's end.
+6. **Go live**: replace `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET` with their Live Mode equivalents, and repeat steps 1-3 in Stripe's Live Mode (Test and Live Mode each have entirely separate Products/Prices/webhook endpoints - nothing carries over automatically).
+
+No code change is required to switch between Test Mode and Live Mode - it is entirely a function of which Stripe key is configured ("TEST MODE": "Configuration entirely through environment variables").
 
 ---
 
@@ -360,6 +383,8 @@ Future versions may integrate external monitoring solutions.
 
 Version 2, Phase 25: reviewed, per `IMPLEMENTATION_ORDER_V2.md`. No document names a specific vendor, and introducing one would mean a new paid dependency (`PROJECT_CONSTRAINTS.md`: "No paid APIs," costs "as close to €0/month as possible") requiring approval and real credentials this environment cannot obtain - deliberately deferred rather than guessed, per this phase's explicit "stop and ask" instruction. Vercel Logs/Supabase Logs/Browser Console remain the tooling until a specific vendor is chosen in a future phase.
 
+Version 2, Phase 39 (Production Readiness Audit): added `src/lib/monitoring.ts` - a thin, vendor-agnostic facade (`captureException`/`captureMessage`/`trackEvent`) that only logs to the console today, with no new dependency and nothing to configure. Wiring up a real provider (Sentry, PostHog, Vercel Analytics/Speed Insights) once one is actually chosen means editing that one file's three function bodies, never any of its call sites. See `PRODUCTION_AUDIT_REPORT.md`.
+
 ---
 
 # Error Reporting
@@ -428,6 +453,8 @@ HTTPS is mandatory.
 
 HTTP requests should automatically redirect to HTTPS.
 
+Version 2, Phase 39 (Production Readiness Audit): `next.config.ts` now sends five security headers on every response - `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, a `Permissions-Policy` disabling unused browser features, and `Strict-Transport-Security` (reinforcing this section's own HTTPS requirement at the browser level). A Content-Security-Policy was deliberately not added - it needs verification in a real browser this environment cannot perform before it's safe to enable; a recommended starting policy is documented in `PRODUCTION_AUDIT_REPORT.md`.
+
 ---
 
 # Domain
@@ -446,9 +473,21 @@ The domain configuration is outside the MVP scope.
 
 # File Storage
 
-The MVP does not require file uploads.
+Version 2, Phase 40 (CV Library): supersedes this section's original text below - CV versions now hold a real uploaded PDF, so Supabase Storage is required. The migration `supabase/migrations/20260726090000_cv_file_storage.sql` creates and configures everything needed (the bucket itself and its RLS policy) - running migrations is the only setup step; nothing is configured by hand in the Supabase Dashboard.
 
-Supabase Storage should not be configured.
+Bucket
+
+cv-files (private, 5 MB limit, PDF only)
+
+Object key
+
+`<user_id>/<cv_version_id>.pdf`
+
+Access
+
+Every download uses a short-lived signed URL, never a public bucket URL - see `DATABASE.md`'s "Storage" section.
+
+Original MVP text (no longer current): "The MVP does not require file uploads. Supabase Storage should not be configured."
 
 ---
 
@@ -495,6 +534,8 @@ Before deployment verify:
 ✓ HTTPS enabled
 
 ✓ Responsive UI verified
+
+Version 2, Phase 39 (Production Readiness Audit): see `PRODUCTION_AUDIT_REPORT.md`'s own "Blocking Production" section for the complete, current list of what remains before real users are onboarded (configuring real Stripe/Supabase production credentials, connecting Vercel, the first live end-to-end verification, and a rate-limiting decision) - this checklist's items are all satisfied by the codebase itself; those five are operational steps outside what any code change can complete.
 
 ---
 

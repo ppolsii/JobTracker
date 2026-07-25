@@ -1,5 +1,6 @@
 import { CVVersionRepository } from "@/features/cv/repositories/cv-version.repository";
 import type { CVVersion } from "@/features/cv/types/cv-version.types";
+import { validateCVFile } from "@/features/cv/utils/cv-file-validation";
 import { ERROR_CODES } from "@/shared/constants/error-codes";
 import { POSTGRES_ERROR_CODES } from "@/shared/constants/postgres-error-codes";
 import { normalize } from "@/shared/utils/normalize";
@@ -8,6 +9,23 @@ import type { ActionResult } from "@/types/action-result";
 interface CVVersionFields {
   name: string;
   description?: string;
+}
+
+function fileValidationError(message: string): ActionResult<never> {
+  return {
+    success: false,
+    error: { message, code: ERROR_CODES.VALIDATION_ERROR },
+  };
+}
+
+function uploadFailedError(): ActionResult<never> {
+  return {
+    success: false,
+    error: {
+      message: "Something went wrong while uploading the CV file.",
+      code: ERROR_CODES.INTERNAL_ERROR,
+    },
+  };
 }
 
 function duplicateNameError(name: string): ActionResult<never> {
@@ -21,9 +39,18 @@ function duplicateNameError(name: string): ActionResult<never> {
 }
 
 export const CVVersionService = {
+  // Phase 40 (CV Library): "each entry represents a real uploaded CV" - a
+  // new CV version must have a PDF attached, enforced here (not a NOT NULL
+  // column - see the migration's own comment) so a corrupted upload never
+  // leaves an unusable, fileless row behind: the file is uploaded to
+  // storage FIRST, under a freshly generated id, and only once that
+  // succeeds is the row created with that same id. If the row insert then
+  // fails (e.g. a concurrent duplicate name), the orphaned upload is
+  // removed - it was never attached to a row the user could see.
   async create(
     userId: string,
-    input: CVVersionFields
+    input: CVVersionFields,
+    file: File
   ): Promise<ActionResult<CVVersion>> {
     const name = input.name.trim();
 
@@ -35,13 +62,30 @@ export const CVVersionService = {
       return duplicateNameError(name);
     }
 
+    const validation = validateCVFile(file);
+    if (!validation.valid) {
+      return fileValidationError(validation.message);
+    }
+
+    const id = crypto.randomUUID();
+    const uploaded = await CVVersionRepository.uploadFile(userId, id, file);
+    if (uploaded.error) {
+      return uploadFailedError();
+    }
+
     const { data, error } = await CVVersionRepository.create({
+      id,
       user_id: userId,
       name,
       description: normalize(input.description),
+      file_path: uploaded.path,
+      file_name: file.name,
+      file_size: file.size,
+      uploaded_at: new Date().toISOString(),
     });
 
     if (error) {
+      await CVVersionRepository.removeFile(uploaded.path);
       if (error.code === POSTGRES_ERROR_CODES.UNIQUE_VIOLATION) {
         return duplicateNameError(name);
       }
@@ -57,10 +101,16 @@ export const CVVersionService = {
     return { success: true, data };
   },
 
+  // `file` is optional here (unlike create) - editing a CV version's name/
+  // description should never require re-uploading its file. When given, it
+  // replaces the existing file in place (same deterministic path, so
+  // nothing about the row's identity or its applications' references
+  // changes) - "Replace PDF" from the UI's perspective.
   async update(
     userId: string,
     id: string,
-    input: CVVersionFields
+    input: CVVersionFields,
+    file?: File
   ): Promise<ActionResult<CVVersion>> {
     const name = input.name.trim();
 
@@ -69,9 +119,36 @@ export const CVVersionService = {
       return duplicateNameError(name);
     }
 
+    let filePatch: {
+      file_path: string;
+      file_name: string;
+      file_size: number;
+      uploaded_at: string;
+    } | null = null;
+
+    if (file) {
+      const validation = validateCVFile(file);
+      if (!validation.valid) {
+        return fileValidationError(validation.message);
+      }
+
+      const uploaded = await CVVersionRepository.uploadFile(userId, id, file);
+      if (uploaded.error) {
+        return uploadFailedError();
+      }
+
+      filePatch = {
+        file_path: uploaded.path,
+        file_name: file.name,
+        file_size: file.size,
+        uploaded_at: new Date().toISOString(),
+      };
+    }
+
     const { data, error } = await CVVersionRepository.update(userId, id, {
       name,
       description: normalize(input.description),
+      ...filePatch,
     });
 
     if (error) {
@@ -98,6 +175,58 @@ export const CVVersionService = {
     }
 
     return { success: true, data };
+  },
+
+  // Phase 40 (CV Library): mints a short-lived signed URL for one CV
+  // version's file - available for archived rows too (an archived CV is
+  // still fully downloadable, only hidden from active pickers), matching
+  // findFileById's own deliberate choice not to filter on deleted_at.
+  async getDownloadUrl(
+    userId: string,
+    id: string
+  ): Promise<ActionResult<{ url: string; fileName: string }>> {
+    const { data, error } = await CVVersionRepository.findFileById(
+      userId,
+      id
+    );
+
+    if (error || !data) {
+      return {
+        success: false,
+        error: {
+          message: "CV version not found.",
+          code: ERROR_CODES.NOT_FOUND,
+        },
+      };
+    }
+
+    if (!data.file_path) {
+      return {
+        success: false,
+        error: {
+          message: "This CV version has no uploaded file yet.",
+          code: ERROR_CODES.NOT_FOUND,
+        },
+      };
+    }
+
+    const fileName = data.file_name ?? "cv.pdf";
+    const signed = await CVVersionRepository.createSignedDownloadUrl(
+      data.file_path,
+      fileName
+    );
+
+    if (signed.error || !signed.data) {
+      return {
+        success: false,
+        error: {
+          message: "Something went wrong while preparing the download.",
+          code: ERROR_CODES.INTERNAL_ERROR,
+        },
+      };
+    }
+
+    return { success: true, data: { url: signed.data.signedUrl, fileName } };
   },
 
   // BUSINESS_RULES.md "CV Rules": "A CV version cannot be deleted while

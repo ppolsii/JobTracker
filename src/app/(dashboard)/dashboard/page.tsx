@@ -8,6 +8,10 @@ import { DashboardKpiCards } from "@/features/dashboard/components/DashboardKpiC
 import { QuickActions } from "@/features/dashboard/components/QuickActions";
 import { RecentApplicationsTable } from "@/features/dashboard/components/RecentApplicationsTable";
 import { DashboardService } from "@/features/dashboard/services/dashboard.service";
+import { GoalsDashboardWidget } from "@/features/goals/components/GoalsDashboardWidget";
+import { GoalService } from "@/features/goals/services/goal.service";
+import { NotificationsDashboardWidget } from "@/features/notifications/components/NotificationsDashboardWidget";
+import { NotificationService } from "@/features/notifications/services/notification.service";
 import {
   Card,
   CardContent,
@@ -29,10 +33,13 @@ export default async function DashboardPage() {
     redirect(ROUTES.LOGIN);
   }
 
-  const [summaryResult, { companies, cvVersions }] = await Promise.all([
-    DashboardService.getSummary(user.id),
-    ApplicationPickerService.getOptions(user.id),
-  ]);
+  const [summaryResult, { companies, cvVersions }, goalsWidgetResult, notificationsWidgetResult] =
+    await Promise.all([
+      DashboardService.getSummary(user.id),
+      ApplicationPickerService.getOptions(user.id),
+      GoalService.getDashboardWidgetData(user.id),
+      NotificationService.getNotifications(user.id, user.created_at, {}),
+    ]);
 
   if (!summaryResult.success) {
     return (
@@ -47,6 +54,10 @@ export default async function DashboardPage() {
       <h2 className="text-lg font-semibold">Dashboard</h2>
 
       <DashboardKpiCards counts={counts} />
+
+      <GoalsDashboardWidget result={goalsWidgetResult} />
+
+      <NotificationsDashboardWidget result={notificationsWidgetResult} />
 
       <Card>
         <CardHeader>

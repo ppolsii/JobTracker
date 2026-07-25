@@ -17,7 +17,10 @@ interface CVVersionFormDialogProps {
 }
 
 // Fully controlled - the caller owns the open state and renders its own
-// trigger (a visible "Create CV version" button, or a row's "Edit" action).
+// trigger (a visible "Upload a CV" button, or a row's "Edit" action). CV
+// creation/upload lives only on the CV Versions page (IMPLEMENTATION_ORDER_V2.md
+// Phase 40 follow-up "CV MANAGEMENT") - this dialog is not opened from
+// ApplicationForm anymore.
 export function CVVersionFormDialog({
   open,
   onOpenChange,
@@ -28,12 +31,12 @@ export function CVVersionFormDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {cvVersion ? "Edit CV version" : "Create CV version"}
+            {cvVersion ? "Edit CV version" : "Upload a CV"}
           </DialogTitle>
           <DialogDescription>
             {cvVersion
               ? "Update this CV version's details."
-              : "Add a CV version you use when applying."}
+              : "Upload the PDF you use when applying."}
           </DialogDescription>
         </DialogHeader>
         <CVVersionForm

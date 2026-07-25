@@ -24,13 +24,22 @@ export type ApplicationStatusHistoryEntry =
 export type ApplicationNote =
   Database["public"]["Tables"]["application_notes"]["Row"];
 
-// The lean shape ApplicationRepository.listAllForAnalytics selects - only
-// the columns AnalyticsService groups/aggregates by, not the full
-// Application row (ANALYTICS_ENGINE.md "avoid loading unnecessary records").
+// The lean shape ApplicationRepository.listAllForAnalytics selects - only a
+// bounded set of columns, not the full Application row (ANALYTICS_ENGINE.md
+// "avoid loading unnecessary records"). Originally Analytics-only (Phase 12)
+// but reused as-is by every later feature needing "bulk lean data about
+// every active application" (Advanced Analytics' Salary section added
+// salary fields in Phase 33; Calendar reuses the whole row plus `position`
+// in Phase 34) - one shared, evolving projection, not a parallel one per
+// consumer.
 export interface AnalyticsApplicationRow {
   id: string;
   company_id: string;
   cv_version_id: string;
+  // IMPLEMENTATION_ORDER_V2.md Phase 34 (Calendar & Timeline): the Calendar
+  // and its search need the position, which no earlier consumer of this
+  // projection did.
+  position: string;
   source: ApplicationSource | null;
   // IMPLEMENTATION_ORDER_V2.md Phase 29: Work Mode/Employment Type Analytics
   // group by these two columns - no statistics view carries them (DATABASE.md
@@ -43,6 +52,12 @@ export interface AnalyticsApplicationRow {
   current_status: ApplicationStatus;
   companies: { name: string };
   cv_versions: { name: string };
+  // IMPLEMENTATION_ORDER_V2.md Phase 33 (Advanced Analytics) "Salary":
+  // nullable - "Missing salary data must never break analytics" - every
+  // salary calculation must treat these as optional.
+  salary_min: number | null;
+  salary_max: number | null;
+  currency: string | null;
 }
 
 // The lean shape ApplicationNoteRepository.searchByContent selects - only

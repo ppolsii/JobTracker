@@ -206,7 +206,7 @@ export const ApplicationRepository = {
     return supabase
       .from("applications")
       .select(
-        "id, company_id, cv_version_id, source, work_mode, employment_type, application_date, current_status, companies!inner(name), cv_versions!inner(name)"
+        "id, company_id, cv_version_id, position, source, work_mode, employment_type, application_date, current_status, salary_min, salary_max, currency, companies!inner(name), cv_versions!inner(name)"
       )
       .eq("user_id", userId)
       .is("deleted_at", null)

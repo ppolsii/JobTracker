@@ -348,6 +348,40 @@ No business logic belongs here.
 
 ---
 
+# Dependencies
+
+Production Readiness Audit (IMPLEMENTATION_ORDER_V2.md Phase 39): "Document why each important dependency exists." Every runtime dependency in `package.json` and the reason it's there - kept here (not `PROJECT_CONSTRAINTS.md`, which states the *policy* for adding one) since this is the record of what was actually added and why.
+
+`@base-ui/react` - unstyled, accessible primitives (Dialog/Sheet/Select/Tooltip/Accordion/Progress/Button/etc.) every shared UI component wraps - the actual accessibility behavior (focus trapping, keyboard nav, ARIA) this app relies on throughout comes from here, not hand-rolled.
+
+`@hookform/resolvers` - bridges `react-hook-form` to Zod schemas, so every form validates with the exact same schema a Server Action re-validates with server-side.
+
+`@supabase/ssr` / `@supabase/supabase-js` - the database/auth client (`ssr` for cookie-based server/browser clients; `supabase-js` directly for the service-role admin client, which has no cookie-based session to manage).
+
+`class-variance-authority` / `clsx` / `tailwind-merge` - the `cn()`/`cva()` styling utilities every shared UI component uses to compose Tailwind classes and variants safely.
+
+`lucide-react` - the only icon set used anywhere in the app.
+
+`next` / `react` / `react-dom` - the framework itself.
+
+`next-themes` - light/dark theme persistence and system-preference detection (`ThemeProvider`/`ThemeToggle`).
+
+`react-hook-form` - form state/validation wiring for every form in the app.
+
+`react-markdown` - renders `application_notes.content` as Markdown (BUSINESS_RULES.md "Notes") safely - it renders to React elements directly, never `dangerouslySetInnerHTML`, and does not render embedded raw HTML by default.
+
+`sonner` - the toast notification system every Server Action's success/error result surfaces through.
+
+`stripe` - the Stripe Node SDK (webhook verification, Checkout/Billing Portal session creation) - server-only, never imported by a Client Component.
+
+`tw-animate-css` - the small set of Tailwind animation utilities the shared UI primitives' open/close transitions use.
+
+`zod` - the schema validation library backing every Server Action's input validation and every `useForm`'s resolver.
+
+`shadcn` (devDependency) - the component-scaffolding CLI used to add new shadcn/ui-style primitives during development. Never imported by application code (confirmed by a full-codebase search, Phase 39) - moved out of `dependencies` into `devDependencies` this phase, since it was never part of the deployed runtime.
+
+---
+
 # Types Directory
 
 Contains global shared types.

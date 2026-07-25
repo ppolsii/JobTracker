@@ -279,6 +279,8 @@ Every application references exactly one CV version.
 
 A CV version cannot be deleted while applications reference it.
 
+Version 2, Phase 40 (CV Library): every new CV version must have a real PDF file attached (`CVVersionService.create` rejects a missing/invalid file) - CV versions created before this phase without a file remain valid and keep working exactly as before, they just have nothing to download until a file is uploaded for them via Edit. The deletion rule above is unchanged: an unused CV version's "Delete" action still only archives it (this codebase has no hard-delete anywhere - see ARCHITECTURE.md "Repositories"), and a referenced CV version still cannot be archived at all - attempting it surfaces the same message this rule has always produced, now shown as a dedicated dialog instead of a plain toast (UI_SYSTEM.md "Feedback").
+
 ---
 
 # Duplicate Applications
@@ -686,7 +688,7 @@ Without requiring breaking schema changes.
 
 ---
 
-# Billing (Version 2, Phase 23 data model; Phase 24 enforcement)
+# Billing (Version 2, Phase 23 data model; Phase 24 enforcement; Phase 38 production Checkout/webhooks)
 
 The application supports a Free and a Pro plan (`VALUE_PROPOSITION.md` "Free Plan"/"Pro Plan").
 
@@ -700,7 +702,7 @@ Subscription status is a mirror of the payment provider's own state. The applica
 
 Downgrading, cancelling, or a failed payment must never delete historical data (Applications, Companies, CV Versions, Notes). Plan changes affect access going forward only, never past records - consistent with this document's general soft-delete/history-preservation principle.
 
-A user is on the Pro plan when, and only when, their subscription's `plan` column is `pro`. `status` (Stripe's own subscription status, mirrored as-is per Phase 23) is not itself consulted for this decision - nothing sets `plan` to `pro` yet (Checkout does not exist - `IMPLEMENTATION_ORDER_V2.md` Phase 24 explicitly excludes it), so this rule is currently unreachable for every user. It is documented now so the eventual Checkout implementation has one clear, already-agreed rule to satisfy, rather than inventing one at that point.
+A user is on the Pro plan when, and only when, their subscription's `plan` column is `pro`. `status` (Stripe's own subscription status, mirrored as-is per Phase 23) is not itself consulted anywhere else for entitlement decisions - `BillingWebhookService` (Phase 38) is the one place `plan` is derived from `status`, whenever a Stripe subscription event is processed: `trialing`/`active`/`past_due` map to `pro` (a failed renewal charge does not immediately revoke access - it starts a grace period, retryable through the Customer Portal); every other status maps to `free`.
 
 ---
 
@@ -710,7 +712,7 @@ Every entitlement decision below is made in exactly one place, `BillingService`,
 
 ### Application Limit
 
-Free plan: a maximum of 25 active (non-archived) applications.
+Free plan: a maximum of 15 active (non-archived) applications (reduced from 25 - Version 2, Phase 31).
 
 Pro plan: unlimited applications.
 

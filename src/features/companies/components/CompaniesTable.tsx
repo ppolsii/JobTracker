@@ -130,7 +130,7 @@ export function CompaniesTable({
             description={
               archived
                 ? "Companies you archive will appear here, ready to restore."
-                : "Add the companies you're applying to so you can track them and see analytics later."
+                : "Companies are added automatically when you create an application - just start typing a name and choose \"Create\". Use this page to manage them afterwards."
             }
           />
         }

@@ -5,9 +5,9 @@ import { redirect } from "next/navigation";
 
 import { ROUTES } from "@/config/routes";
 import { AuthService } from "@/features/auth/services/auth.service";
-import { ApplicationCreateButton } from "@/features/applications/components/ApplicationCreateButton";
 import { ApplicationFilterBar } from "@/features/applications/components/ApplicationFilterBar";
 import { ApplicationsTable } from "@/features/applications/components/ApplicationsTable";
+import { NewApplicationButton } from "@/features/applications/components/NewApplicationButton";
 import { listApplicationsSchema } from "@/features/applications/schemas/application.schema";
 import { ApplicationPickerService } from "@/features/applications/services/application-picker.service";
 import { ApplicationService } from "@/features/applications/services/application.service";
@@ -85,7 +85,7 @@ export default async function ApplicationsPage({
                 <Archive className="size-4" />
                 Archived
               </Button>
-              <ApplicationCreateButton
+              <NewApplicationButton
                 companies={companies}
                 cvVersions={cvVersions}
               />

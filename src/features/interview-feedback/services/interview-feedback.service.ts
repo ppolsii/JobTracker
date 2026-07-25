@@ -108,6 +108,25 @@ export const InterviewFeedbackService = {
     return { success: true, data };
   },
 
+  // IMPLEMENTATION_ORDER_V2.md Phase 34 (Calendar & Timeline). Backs the
+  // Calendar page, matching the same "go through this Service, never the
+  // Repository directly" discipline as listForApplication above.
+  async listAllForUser(userId: string): Promise<ActionResult<InterviewFeedback[]>> {
+    const { data, error } = await InterviewFeedbackRepository.listAllForUser(userId);
+
+    if (error) {
+      return {
+        success: false,
+        error: {
+          message: "Something went wrong while loading interview feedback.",
+          code: ERROR_CODES.INTERNAL_ERROR,
+        },
+      };
+    }
+
+    return { success: true, data: data ?? [] };
+  },
+
   // Ownership is enforced by InterviewFeedbackRepository.update filtering on
   // user_id directly (interview_feedback has its own user_id column, unlike
   // application_notes) - no separate resolve-then-check step is needed here.
