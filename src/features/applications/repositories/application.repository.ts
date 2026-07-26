@@ -175,6 +175,97 @@ export const ApplicationRepository = {
       .maybeSingle();
   },
 
+  // Permanent Application Deletion (product decision, post-Phase 40): backs
+  // ApplicationService.deletePermanently's own "is this application already
+  // archived" business-rule check. Deliberately does not filter on
+  // deleted_at itself (unlike findById above) and returns only the one
+  // column the Service actually needs to decide - this is a plain
+  // existence + state lookup, not a business decision made here.
+  async findAnyById(userId: string, id: string) {
+    const supabase = await createClient();
+    const result = await supabase
+      .from("applications")
+      .select("id, deleted_at")
+      .eq("user_id", userId)
+      .eq("id", id)
+      .maybeSingle();
+
+    // TEMPORARY DIAGNOSTIC LOGGING - remove once the Permanent Application
+    // Deletion "Something went wrong" report is root-caused. Prints the raw
+    // Postgres/PostgREST error, if any, before ApplicationService ever
+    // converts it into its generic message.
+    if (result.error) {
+      console.error("[TEMP DEBUG] ApplicationRepository.findAnyById error:", {
+        full: result.error,
+        code: result.error.code,
+        message: result.error.message,
+        details: result.error.details,
+        hint: result.error.hint,
+      });
+    }
+
+    return result;
+  },
+
+  // Permanent Application Deletion: the one place in this codebase that
+  // issues a real DELETE against `applications` (migration
+  // 20260727090000_application_hard_delete.sql grants it). Deliberately
+  // does not filter on deleted_at here either - "only an already-archived
+  // application may be deleted" is ApplicationService.deletePermanently's
+  // business rule, decided before this method is ever called (via
+  // findAnyById above), not a persistence-layer condition.
+  //
+  // Bug fix: a plain `.delete()` here always failed - `applications`
+  // cascades to `application_status_history`, whose Phase 3 BEFORE DELETE
+  // trigger unconditionally rejects any deletion of its rows, including
+  // ones caused by this cascade (Postgres triggers fire on cascade-induced
+  // deletes the same as direct ones). Routed through the
+  // `delete_application_permanently` RPC (migration
+  // 20260727100000_application_hard_delete_cascade_fix.sql), which sets a
+  // transaction-scoped flag that trigger now checks - narrowly permitting
+  // only this one, authorized cascade path, never a direct delete attempt
+  // against status history itself. Cascades on to application_notes/
+  // calendar_events (and, transitively, interview_feedback) via their own
+  // FKs exactly as before - see DATABASE.md.
+  async hardDelete(userId: string, id: string) {
+    const supabase = await createClient();
+    // `delete_application_permanently` is a brand-new SQL function - the
+    // generated Database type has no entry for it at all (not just a
+    // nullability gap) until `supabase gen types` is re-run against the
+    // migrated project. Per DECISIONS.md "ADR-030 - Generated Type
+    // Boundaries," the generated file itself is never hand-edited to work
+    // around this - the cast is scoped to this one call only, and should
+    // be removed (reverting to a plain, uncast `supabase.rpc(...)` call)
+    // the next time types are regenerated.
+    const { error } = await (
+      supabase.rpc as unknown as (
+        fn: "delete_application_permanently",
+        args: { p_user_id: string; p_application_id: string }
+      ) => Promise<{
+        error: { message: string; code: string; details: string; hint: string } | null;
+      }>
+    )("delete_application_permanently", {
+      p_user_id: userId,
+      p_application_id: id,
+    });
+
+    // TEMPORARY DIAGNOSTIC LOGGING - remove once the Permanent Application
+    // Deletion "Something went wrong" report is root-caused. Prints the raw
+    // Postgres/PostgREST error, if any, before ApplicationService ever
+    // converts it into its generic message.
+    if (error) {
+      console.error("[TEMP DEBUG] delete_application_permanently RPC error:", {
+        full: error,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      });
+    }
+
+    return { error };
+  },
+
   // Paginated sibling of `list`, filtered to archived rows only - backs the
   // Archived view a user restores from. No filters/sort beyond pagination,
   // matching the same simplicity Companies/CV Versions' Archived view uses.

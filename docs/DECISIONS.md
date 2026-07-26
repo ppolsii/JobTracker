@@ -516,6 +516,24 @@ The original cost/complexity trade-off no longer holds, either: Supabase Storage
 
 ---
 
+# ADR-032 — Permanent Application Deletion (narrows ADR-021)
+
+## Decision
+
+A user may permanently delete an application, but only once it is already archived. This is a genuine, physical `DELETE` - the one exception anywhere in this codebase to "no business entity is ever physically deleted," and it is scoped to `applications` alone; Companies and CV Versions keep no DELETE grant at all.
+
+ADR-021 ("Business entities should use soft deletes whenever possible") is not superseded - its own wording already allows for a deliberate, narrow exception ("whenever possible"), and this is that exception, not a reversal of the rule. Soft delete (archive) remains the *only* way to remove an application from view for every other purpose; permanent deletion is a distinct, additional action layered on top of it, not a replacement for it.
+
+The "must already be archived" rule is enforced in `ApplicationService.deletePermanently`, not in the database. The RLS DELETE policy on `applications` mirrors every other policy on that table exactly - ownership only (`user_id = auth.uid()`) - per this project's standing split (`ARCHITECTURE.md`): RLS enforces ownership, Services own business rules. A business rule that later needs to change (e.g. a different eligibility condition) should never require a migration to change it.
+
+Deletion cascades through existing foreign keys to Status History, Notes, Interview Feedback, and linked Calendar events - all already `on delete cascade`, added originally for the still-unbuilt whole-account deletion (`IMPLEMENTATION_ORDER_V2.md` Phase 40), now exercised by this narrower, single-application path too.
+
+## Reason
+
+Archiving and deleting solve different, both legitimate, user needs: archive hides something while preserving its history (for Analytics, for a change of mind later); delete permanently removes data a user explicitly no longer wants to exist, at all. Requiring an application to be archived first keeps deletion a deliberate second step on data the user has already decided to set aside, never a single click away from an application still in active use.
+
+---
+
 # Claude Instructions
 
 Treat every Architecture Decision Record in this document as immutable.

@@ -128,10 +128,18 @@ export function JobImportReviewForm({
               // that component's comment for the full explanation. `?? ""`
               // keeps this Select controlled with a defined string from the
               // first render, instead of `|| undefined` turning the initial
-              // `""` into an actual `undefined`.
+              // `""` into an actual `undefined`. `itemToStringLabel` is
+              // needed on top of that so the trigger displays the CV's
+              // name instead of its id once a value is selected - Base
+              // UI's Select falls back to stringifying the raw value when
+              // no `items`/`itemToStringLabel` mapping is supplied.
               <Select
                 value={field.value ?? ""}
                 onValueChange={field.onChange}
+                itemToStringLabel={(id: string) =>
+                  cvVersions.find((cvVersion) => cvVersion.id === id)?.name ??
+                  id
+                }
               >
                 <SelectTrigger id="cv_version_id" className="w-full">
                   <SelectValue placeholder="Select a CV version" />

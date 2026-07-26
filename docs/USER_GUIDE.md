@@ -188,6 +188,14 @@ Archiving removes an application from your active list without deleting it. Use 
 
 Archived applications aren't gone. Switch to the **Archived** view (from the Applications page) to see everything you've archived, and restore anything you archived by mistake, or that has become relevant again (e.g. a company re-opens contact months later).
 
+### Permanently deleting
+
+Archiving and deleting are different actions. Archiving hides an application while keeping its full history; deleting removes it — and everything attached to it — for good.
+
+You can only permanently delete an application that's **already archived** — switch to the Archived view first. Click **Delete permanently**, and you'll be asked to type `DELETE` to confirm; this is a stronger confirmation than every other action in the app, on purpose, because it's the one action here that truly cannot be undone. Deleting an application removes its entire status history, its notes, any interview feedback attached to it, and any linked calendar events — all of it, permanently. If you export your data afterward, a deleted application will no longer be included.
+
+If you're not sure, archive it instead — you can always delete it later, but you can never undo a deletion.
+
 ### Best practices for managing applications
 
 - Log the application the same day you apply — not at the end of the week.

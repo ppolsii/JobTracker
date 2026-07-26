@@ -103,6 +103,12 @@ export function CalendarFilterBar({
         <Select
           value={defaultValues.companyId || ANY_VALUE}
           onValueChange={(value) => setParam("companyId", value)}
+          itemToStringLabel={(value: string) =>
+            value === ANY_VALUE
+              ? "Any company"
+              : (companies.find((company) => company.id === value)?.name ??
+                value)
+          }
         >
           <SelectTrigger aria-label="Filter by company">
             <SelectValue placeholder="Company" />

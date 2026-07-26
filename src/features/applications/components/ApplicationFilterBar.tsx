@@ -139,6 +139,12 @@ export function ApplicationFilterBar({
         <Select
           value={defaultValues.company_id || ANY_VALUE}
           onValueChange={(value) => setParam("company_id", value)}
+          itemToStringLabel={(value: string) =>
+            value === ANY_VALUE
+              ? "Any company"
+              : (companies.find((company) => company.id === value)?.name ??
+                value)
+          }
         >
           <SelectTrigger aria-label="Filter by company">
             <SelectValue placeholder="Company" />
@@ -171,6 +177,12 @@ export function ApplicationFilterBar({
                 <Select
                   value={defaultValues.cv_version_id || ANY_VALUE}
                   onValueChange={(value) => setParam("cv_version_id", value)}
+                  itemToStringLabel={(value: string) =>
+                    value === ANY_VALUE
+                      ? "Any CV version"
+                      : (cvVersions.find((cvVersion) => cvVersion.id === value)
+                          ?.name ?? value)
+                  }
                 >
                   <SelectTrigger aria-label="Filter by CV version">
                     <SelectValue placeholder="CV version" />

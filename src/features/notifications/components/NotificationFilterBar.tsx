@@ -99,6 +99,13 @@ export function NotificationFilterBar({
         <Select
           value={defaultValues.category || ANY_VALUE}
           onValueChange={(value) => setParam("category", value)}
+          itemToStringLabel={(value: string) =>
+            value === ANY_VALUE
+              ? "Any category"
+              : (NOTIFICATION_CATEGORY_LABELS[
+                  value as keyof typeof NOTIFICATION_CATEGORY_LABELS
+                ] ?? value)
+          }
         >
           <SelectTrigger aria-label="Filter by category">
             <SelectValue placeholder="Category" />
@@ -116,6 +123,12 @@ export function NotificationFilterBar({
         <Select
           value={defaultValues.companyId || ANY_VALUE}
           onValueChange={(value) => setParam("companyId", value)}
+          itemToStringLabel={(value: string) =>
+            value === ANY_VALUE
+              ? "Any company"
+              : (companies.find((company) => company.id === value)?.name ??
+                value)
+          }
         >
           <SelectTrigger aria-label="Filter by company">
             <SelectValue placeholder="Company" />

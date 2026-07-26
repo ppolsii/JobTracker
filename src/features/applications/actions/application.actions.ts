@@ -7,6 +7,7 @@ import { AuthService } from "@/features/auth/services/auth.service";
 import {
   archiveApplicationSchema,
   createApplicationSchema,
+  deleteApplicationSchema,
   restoreApplicationSchema,
   updateApplicationSchema,
 } from "@/features/applications/schemas/application.schema";
@@ -82,6 +83,28 @@ export async function restoreApplicationAction(
   }
 
   const result = await ApplicationService.restore(auth.data, parsed.data.id);
+  if (result.success) {
+    revalidatePath(ROUTES.APPLICATIONS);
+  }
+  return result;
+}
+
+// Permanent Application Deletion (product decision, post-Phase 40).
+export async function deleteApplicationAction(
+  input: unknown
+): Promise<ActionResult<true>> {
+  const auth = await AuthService.requireUserId();
+  if (!auth.success) return auth;
+
+  const parsed = deleteApplicationSchema.safeParse(input);
+  if (!parsed.success) {
+    return validationError(parsed.error.issues[0]?.message ?? "Invalid input.");
+  }
+
+  const result = await ApplicationService.deletePermanently(
+    auth.data,
+    parsed.data.id
+  );
   if (result.success) {
     revalidatePath(ROUTES.APPLICATIONS);
   }

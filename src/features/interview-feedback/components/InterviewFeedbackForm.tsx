@@ -107,6 +107,9 @@ export function InterviewFeedbackForm({
                 onValueChange={(value) =>
                   field.onChange(value === NONE_VALUE ? undefined : Number(value))
                 }
+                itemToStringLabel={(value: string) =>
+                  value === NONE_VALUE ? "No rating" : `${value} / 5`
+                }
               >
                 <SelectTrigger id="rating" className="w-full">
                   <SelectValue placeholder="No rating" />

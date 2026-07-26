@@ -136,6 +136,13 @@ export function CustomEventForm({
                 onValueChange={(value) =>
                   field.onChange(value === NONE_VALUE ? undefined : value)
                 }
+                itemToStringLabel={(value: string) =>
+                  value === NONE_VALUE
+                    ? "No application"
+                    : (applicationOptions.find(
+                        (option) => option.id === value
+                      )?.label ?? value)
+                }
               >
                 <SelectTrigger id="applicationId" className="w-full">
                   <SelectValue placeholder="No application" />

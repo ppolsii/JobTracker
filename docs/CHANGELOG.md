@@ -1606,6 +1606,46 @@ Requested so the application owner (`polgoca@gmail.com`) can use every Pro-gated
 - `billing.service.test.ts`: new "Developer Dogfooding" describe block - Pro access granted for the developer account regardless of its real (Free, or entirely absent) subscription row, unlimited application usage, `getSubscriptionForUser` showing an active-Pro display without mutating the stored row, and confirmation that no other account is ever affected and that a real Pro user's request never triggers the extra lookup.
 - `npm run typecheck`, `npm run lint`, `npm run test` (547 tests, 43 files), and `npm run build` all pass.
 
+### Bug fix: Edit Application's CV Select showed a stale UUID after editing a second application
+
+Reported as "the Create fix wasn't applied to Edit" - it wasn't a regression of that fix at all. `ApplicationForm` (and its CV `Select`) is a single, shared component for both flows - there was never a second, duplicated implementation to miss. The actual defect: `ApplicationsTable` renders one `ApplicationFormDialog` instance shared across every row's "Edit" action. Base UI's `Dialog` lazily mounts its content the first time it's opened and then keeps it mounted (only hidden) afterward - it does not unmount on close. `useForm`'s `defaultValues` are captured once, at that first real mount, so editing a *different* row afterward reused the same mounted `ApplicationForm` with the *first* edited application's stale `cv_version_id`. That stale id matched no `SelectItem` in the freshly-built list for the new application, so the Select had nothing to resolve a label from and fell back to the raw id - the same visible symptom as the earlier bug, but a completely different cause. Create was never exposed to this: its `application` is always `undefined`, so there was never a staler value to go stale.
+
+Fixed with a `key` prop on both `ApplicationFormDialog` usages that can outlive a single edited application - `ApplicationsTable` (keyed by `` `${id}-${updated_at}` ``, so a different row forces a remount) and `ApplicationDetailActions` (same key shape, so re-opening the edit dialog after a successful save reflects the just-saved values instead of stale pre-save ones). `NewApplicationButton`'s create-only usage needs no key - `application` never varies there.
+
+No component-rendering tests exist in this suite to lock this in directly (per this project's Node-only testing philosophy) - verified by tracing the exact mount/prop lifecycle instead; both `key` additions are documented in place with the full mechanism.
+
+### Product decision: Permanent Application Deletion
+
+Reviewed (UX, business rules, Analytics/Timeline impact, referential integrity, audit/history implications) at the user's request before any implementation. The initial recommendation was against adding it - archiving already excludes an application from live Analytics, and every existing precedent in this codebase (most recently, the user's own choice for CV deletion) treats soft-delete-only as the standing rule. The user made the opposite call deliberately, on product grounds: archive and delete solve different needs (hide-while-preserving-history vs. permanently-remove-data-explicitly-unwanted), and delete should never replace archive, only sit behind it. Implemented exactly as scoped:
+
+- **New migration** `20260727090000_application_hard_delete.sql` - grants `DELETE` on `applications` (the only table in this schema with one) and adds an RLS policy enforcing ownership only (`user_id = auth.uid()`), identical in shape to every other policy on this table. Per explicit direction, the "must already be archived" rule is **not** expressed in SQL - it lives entirely in `ApplicationService.deletePermanently`, consistent with `ARCHITECTURE.md`'s "RLS enforces ownership; Services own business rules" split.
+- `ApplicationRepository.findAnyById`/`hardDelete` (new) and `ApplicationService.deletePermanently` (new): rejects `NOT_FOUND` if the application doesn't exist/isn't owned by this user, rejects `VALIDATION_ERROR` ("Archive this application before deleting it permanently") if it's still active, otherwise issues a real `DELETE` - cascading via existing FKs to Status History, Notes, Interview Feedback (transitively), and linked Calendar events. A bare operational log line records the deletion (ids/timestamp only, matching `archive()`'s own logging style) - no shadow copy of the deleted content is kept anywhere.
+- `deleteApplicationSchema`/`deleteApplicationAction` - mirror `archiveApplicationSchema`/Action exactly.
+- New shared `DangerConfirmDialog` (`src/shared/components/DangerConfirmDialog.tsx`) - a stronger confirmation than the existing `ConfirmDialog`, requiring the user to type a fixed keyword (`DELETE` by default) before the destructive action enables, plus an itemized list of exactly what's being lost. Built as a reusable primitive on purpose: the still-unbuilt Account Deletion "Danger Zone" (`IMPLEMENTATION_ORDER_V2.md` Phase 40) can reuse it as-is rather than inventing its own. Per explicit direction, the keyword is fixed rather than the record's own name/position - simpler, language-independent, and just as effective at preventing an accidental click.
+- `ApplicationsTable`: a new "Delete permanently" action, reachable only from the Archived view, alongside Restore - never offered on an active application.
+- `BUSINESS_RULES.md` ("Permanent Deletion," new section), `DECISIONS.md` ("ADR-032," narrows ADR-021 rather than superseding it - ADR-021's own "whenever possible" already allows for exactly this kind of deliberate, scoped exception), `DATABASE.md` (`applications`' new DELETE grant/policy, noted as the only table with one), and `USER_GUIDE.md` (a new "Permanently deleting" section under "Managing Applications") all updated.
+
+### Testing (Permanent Application Deletion)
+
+- `application.service.test.ts`: new `ApplicationService.deletePermanently` describe block - rejects a non-existent/not-owned application (`NOT_FOUND`), rejects a still-active one (`VALIDATION_ERROR`, message names the required action), succeeds for an already-archived one, and propagates both a failed existence lookup and a failed delete as `INTERNAL_ERROR`.
+- `npm run typecheck`, `npm run lint`, `npm run test` (552 tests, 43 files), and `npm run build` all pass.
+
+### Bug fix: Permanent Application Deletion always failed
+
+Every attempt failed with the generic "Something went wrong while deleting this application." Traced end-to-end (UI → Server Action → Service → Repository → Postgres) rather than guessed at: the Server Action, schema validation, and `ApplicationService.deletePermanently`'s own "must already be archived" check all ran correctly - the failure was the `DELETE FROM applications` statement itself.
+
+Root cause: `applications` cascades on delete to `application_status_history`, which has had a `BEFORE DELETE` trigger since Phase 3 (`prevent_status_history_delete`, enforcing "append-only, never delete") that unconditionally raises an exception - `application_status_history is append-only and cannot be updated or deleted`. That trigger fires for *any* deletion of its rows, including one caused by a cascade from deleting the parent application - Postgres does not distinguish a direct delete attempt from a cascade-induced one. The cascade therefore always hit the trigger, which aborted the entire statement. This was a genuine design gap in the feature as originally implemented, not a missing migration or an environment issue - the "referential integrity" review that preceded this feature confirmed the FK cascades existed, but didn't check whether the cascaded-to table had its own independent guard.
+
+Fixed with a new migration, `20260727100000_application_hard_delete_cascade_fix.sql`:
+
+- `prevent_status_history_mutation()` now checks a transaction-scoped flag (`current_setting('app.cascading_application_delete', true)`) before raising, but only for `TG_OP = 'DELETE'` - the sibling UPDATE guard is untouched.
+- A new `delete_application_permanently(p_user_id, p_application_id)` SQL function - the only path allowed to set that flag - mirrors `create_application_with_genesis`/`transition_application_status`'s existing pattern exactly (SECURITY INVOKER, the default; RLS still enforces ownership on `applications`). `ApplicationRepository.hardDelete` now calls this function instead of issuing a plain `DELETE`.
+- A direct attempt to delete an `application_status_history` row still hits the original exception exactly as before - only this one, narrow, authorized cascade path is exempted.
+
+The new function isn't reflected in the generated `Database` type yet (it doesn't exist until `supabase gen types` is re-run against the migrated project) - per `DECISIONS.md` "ADR-030," the generated file itself was not hand-edited; `ApplicationRepository.hardDelete` casts the one `.rpc()` call instead, with a comment marking it removable once types are regenerated.
+
+No test in this suite exercises live Postgres trigger/cascade behavior (this project's Vitest suite is Node-only, no database) - this class of bug can only be caught by tracing the schema itself, which is what this fix's own documentation (here, `DATABASE.md`, and both migration files) is for.
+
 ---
 
 ## Phase 39 — Production Readiness Audit (2026-07-25)
@@ -1646,3 +1686,26 @@ Every table has Row Level Security enabled (13/13); every RLS policy uses the `(
 - No component-rendering tests, per this suite's existing philosophy - this phase reviewed test coverage rather than rewriting existing tests (per its own "do not rewrite tests unnecessarily"). Added: `application.service.test.ts` (capacity gating, reference-validation success/failure for both company and CV version, parallel-not-sequential validation, every Postgres constraint/FK-violation mapping including the generic fallback, trimming/normalizing/currency-uppercasing on success, and not-found/success paths for update/archive/restore/getById/list/listArchived/listAllForAnalytics/listAllIncludingArchived).
 - `npm run typecheck`, `npm run lint`, `npm run test` (494 tests, 39 files - 1 new file, 26 new tests), and `npm run build` all pass, on the upgraded `next@16.2.11`.
 - Not verified in a browser, against a live Supabase project, or against a real Stripe account in this environment - same persistent limitation as every phase since Phase 4, and the report's own top recommendation for what to do before onboarding real users.
+
+---
+
+## Bug fix: id/name-mismatched Select triggers displayed the raw value, not the label (2026-07-26)
+
+Reported again after the earlier fix: the CV Select in the Create Application flow showed the CV's name correctly in the open dropdown, but reverted to a long id-like string in the trigger once a CV was actually selected.
+
+The earlier fix (`field.value ?? ""` instead of `field.value || undefined`, applied to `ApplicationForm.tsx`/`ChangeApplicationStatusDialog.tsx`/`JobImportReviewForm.tsx`'s CV Selects) was necessary but not sufficient: it made the Select controlled from the first render, fixing a real React "changing an uncontrolled component to be controlled" warning/crash - but it never addressed how the trigger resolves a *label* for the selected value. Read directly from Base UI's own source (`resolveValueLabel.js`): `Select.Value` only maps a value to a display label via the `items` array or `itemToStringLabel` function passed to `Select.Root`; without either, it falls back to stringifying the raw `value`. Every affected Select renders `<SelectItem value={x.id}>{x.name}</SelectItem>` - the item's `value` (an id) and its displayed children (a name) are different strings - so the trigger was always going to show the raw id once genuinely controlled, regardless of the earlier fix. Selects where `value` and the displayed label are the same string (status/work-mode/employment-type/source enums, where `SelectItem value="Remote"` also renders "Remote") never showed this symptom, which is why it looked CV-specific at first.
+
+A grep for every `Select` following the `value={x.id}` (or equivalent lookup-based) pattern found the same root cause in more places than the one reported. Added an `itemToStringLabel` closure - looking the current value up in the same options list the items are rendered from - to each:
+
+- `ApplicationForm.tsx` and `JobImportReviewForm.tsx` - CV version Select (the two reported "create a new application" paths).
+- `ApplicationFilterBar.tsx` and `AdvancedAnalyticsFilterBar.tsx` - Company and CV version filters.
+- `CalendarFilterBar.tsx` and `NotificationFilterBar.tsx` - Company filter (`NotificationFilterBar.tsx` also had a second, independent instance: its Category filter's value and label were already two different strings via a lookup table, `NOTIFICATION_CATEGORY_LABELS[option]`).
+- `CustomEventForm.tsx` - the optional "Application" picker.
+- `InterviewFeedbackForm.tsx` - the Rating Select (`value={String(n)}`, label `` `${n} / 5` ``).
+
+`CompanyCombobox.tsx` was never affected - it already passed `itemToStringLabel` correctly (it uses Base UI's `Combobox`, a separate primitive from `Select`), which is why Company selection via that component never showed this symptom.
+
+### Testing
+
+- `npm run typecheck`, `npm run lint`, `npm run test` (552 tests, 43 files - no new tests; this is a display-only, DOM-rendering fix with no new pure logic to unit-test), and `npm run build` all pass.
+- Not verified in a browser in this environment (no live dev server/browser available here) - verified by reading Base UI's own label-resolution source directly and confirming every fixed Select now supplies the mapping it was missing. Manual UI confirmation is still recommended before considering this closed.

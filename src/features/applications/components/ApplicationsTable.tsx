@@ -7,12 +7,14 @@ import { toast } from "sonner";
 
 import {
   archiveApplicationAction,
+  deleteApplicationAction,
   restoreApplicationAction,
 } from "@/features/applications/actions/application.actions";
 import { ApplicationFormDialog } from "@/features/applications/components/ApplicationFormDialog";
 import type { ApplicationWithRelations } from "@/features/applications/types/application.types";
 import { applicationDetailRoute } from "@/config/routes";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
+import { DangerConfirmDialog } from "@/shared/components/DangerConfirmDialog";
 import { DataTable, type DataTableColumn } from "@/shared/components/DataTable";
 import { EmptyState } from "@/shared/components/EmptyState";
 import { Button } from "@/shared/components/ui/button";
@@ -22,11 +24,13 @@ import { Button } from "@/shared/components/ui/button";
 // component's own "Sort by" control, not DataTable's per-page client sort.
 //
 // IMPLEMENTATION_ORDER_V2.md Phase 26: `archived` swaps View/Edit/Archive
-// for a single Restore action. View/Edit are omitted (not just hidden)
-// for archived rows - the Application Detail page and edit form both
-// require an active application (ApplicationService.getById excludes
-// archived rows the same way every other active-only read does), so
-// neither would work until the row is restored.
+// for Restore. View/Edit are omitted (not just hidden) for archived rows -
+// the Application Detail page and edit form both require an active
+// application (ApplicationService.getById excludes archived rows the same
+// way every other active-only read does), so neither would work until the
+// row is restored. Permanent Application Deletion (product decision, post-
+// Phase 40) sits alongside Restore here - deliberately reachable only from
+// this archived view, never from the active list.
 export function ApplicationsTable({
   applications,
   pageSize,
@@ -45,6 +49,11 @@ export function ApplicationsTable({
   const [archivingApplication, setArchivingApplication] =
     useState<ApplicationWithRelations | null>(null);
   const [restoringApplication, setRestoringApplication] =
+    useState<ApplicationWithRelations | null>(null);
+  // Permanent Application Deletion (product decision, post-Phase 40): only
+  // ever set from the archived view - see the `archived` branch of
+  // `columns` below.
+  const [deletingApplication, setDeletingApplication] =
     useState<ApplicationWithRelations | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -77,7 +86,7 @@ export function ApplicationsTable({
       className: "text-right",
       render: (a) =>
         archived ? (
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-1">
             <Button
               type="button"
               variant="ghost"
@@ -86,6 +95,15 @@ export function ApplicationsTable({
               onClick={() => setRestoringApplication(a)}
             >
               <ArchiveRestore className="size-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Delete ${a.position} permanently`}
+              onClick={() => setDeletingApplication(a)}
+            >
+              <Trash2 className="size-4" />
             </Button>
           </div>
         ) : (
@@ -153,6 +171,21 @@ export function ApplicationsTable({
     });
   }
 
+  function handleDeleteConfirm() {
+    if (!deletingApplication) return;
+    const target = deletingApplication;
+
+    startTransition(async () => {
+      const result = await deleteApplicationAction({ id: target.id });
+      if (!result.success) {
+        toast.error(result.error.message);
+        return;
+      }
+      toast.success(`${target.position} permanently deleted.`);
+      setDeletingApplication(null);
+    });
+  }
+
   return (
     <>
       <DataTable
@@ -172,6 +205,22 @@ export function ApplicationsTable({
         }
       />
       <ApplicationFormDialog
+        // Bug fix: one dialog instance is shared across every row's "Edit"
+        // click - without a `key`, Base UI's Dialog keeps `ApplicationForm`
+        // mounted (just hidden) after the first time it's opened, so
+        // `useForm`'s `defaultValues` (captured only once, at that first
+        // mount) never refresh for a later edit of a *different*
+        // application. The stale `cv_version_id` then matches no
+        // `SelectItem` in the newly-built list, and the CV Select falls
+        // back to showing the raw id instead of a name. Keying by the
+        // edited application's id (and `updated_at`, so re-opening the same
+        // row after a successful save also picks up the just-saved values)
+        // forces a fresh mount - and fresh `defaultValues` - every time.
+        key={
+          editingApplication
+            ? `${editingApplication.id}-${editingApplication.updated_at}`
+            : "new"
+        }
         open={!!editingApplication}
         onOpenChange={(open) => !open && setEditingApplication(null)}
         application={editingApplication ?? undefined}
@@ -196,6 +245,22 @@ export function ApplicationsTable({
         confirmLabel="Restore"
         isConfirming={isPending}
         onConfirm={handleRestoreConfirm}
+      />
+      <DangerConfirmDialog
+        open={!!deletingApplication}
+        onOpenChange={(open) => !open && setDeletingApplication(null)}
+        title={`Permanently delete ${deletingApplication?.position ?? "this application"}?`}
+        description="This cannot be undone. Restoring it afterward will not be possible."
+        consequences={[
+          "The application record itself",
+          "Its entire status history/timeline",
+          "Its notes",
+          "Any interview feedback attached to it",
+          "Any calendar events linked to it",
+        ]}
+        confirmLabel="Delete permanently"
+        isConfirming={isPending}
+        onConfirm={handleDeleteConfirm}
       />
     </>
   );

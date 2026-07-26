@@ -234,25 +234,34 @@ export function ApplicationForm({
                 name="cv_version_id"
                 control={control}
                 render={({ field }) => (
-                  // Bug fix: `field.value` starts as `""` (never `undefined`
-                  // - see defaultValues above), and must stay that way here.
-                  // `value || undefined` used to turn that `""` into a real
-                  // `undefined` on the first render, which Base UI's Select
-                  // reads as "uncontrolled - manage your own selection
-                  // state." Once a CV was picked, `field.value` became a
-                  // defined UUID, so `value` flipped from `undefined` to a
-                  // real string on a *later* render - React's "changing an
-                  // uncontrolled component to be controlled" warning, and
-                  // the reason the trigger displayed the raw UUID instead of
-                  // the matching item's label (the label lookup ran against
-                  // the Select's own internal uncontrolled state, built
-                  // during that first, undefined render, not the externally
-                  // supplied value). `field.value ?? ""` is always a defined
-                  // string, so the Select is controlled from render one -
-                  // `""` itself already means "nothing selected yet" to
-                  // Base UI (any value serializing to `''` shows the
-                  // placeholder), so no separate sentinel is needed.
-                  <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                  // Bug fix history for this Select:
+                  // 1) `field.value` starts as `""` (never `undefined` - see
+                  //    defaultValues above) and must stay that way here.
+                  //    `value || undefined` used to turn that `""` into a
+                  //    real `undefined` on the first render, which Base
+                  //    UI's Select reads as "uncontrolled." `field.value ??
+                  //    ""` is always a defined string, so the Select is
+                  //    controlled from render one.
+                  // 2) Being controlled was necessary but not sufficient:
+                  //    Base UI's `Select.Value` only resolves a value to a
+                  //    display label via the `items` array or
+                  //    `itemToStringLabel` prop on `Select.Root` (confirmed
+                  //    in its own source, resolveValueLabel.js) - without
+                  //    either, it falls back to stringifying the raw
+                  //    `value` itself. Since `SelectItem value={cvVersion.id}`
+                  //    (the id) never equals its own displayed children
+                  //    (the name), the trigger kept showing the raw id even
+                  //    once properly controlled. `itemToStringLabel` below
+                  //    closes that gap by looking the id up in the same
+                  //    `cvVersionOptions` list the items are rendered from.
+                  <Select
+                    value={field.value ?? ""}
+                    onValueChange={field.onChange}
+                    itemToStringLabel={(id: string) =>
+                      cvVersionOptions.find((cvVersion) => cvVersion.id === id)
+                        ?.name ?? id
+                    }
+                  >
                     <SelectTrigger id="cv_version_id" className="w-full">
                       <SelectValue placeholder="Select a CV version" />
                     </SelectTrigger>

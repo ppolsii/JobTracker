@@ -202,11 +202,12 @@ export const ApplicationService = {
     return { success: true, data };
   },
 
-  // BUSINESS_RULES.md "Soft Deletes": applications are never physically
-  // deleted. Unlike Companies/CV Versions, applications are not referenced
-  // by any other entity that would block deletion (notes/status history
+  // BUSINESS_RULES.md "Soft Deletes": archiving never physically deletes.
+  // Unlike Companies/CV Versions, applications are not referenced by any
+  // other entity that would block archiving (notes/status history
   // reference *this* application, not the other way around), so no
-  // reference-count guard is needed here.
+  // reference-count guard is needed here. See `deletePermanently` below for
+  // the one, separate, deliberate exception that does physically delete.
   async archive(
     userId: string,
     id: string
@@ -245,6 +246,68 @@ export const ApplicationService = {
 
     console.info(`Application ${id} restored by user ${userId}.`);
     return { success: true, data };
+  },
+
+  // BUSINESS_RULES.md "Permanent Deletion" (product decision, post-Phase
+  // 40): the one deliberate exception to "applications are never physically
+  // deleted" above - narrowly scoped to applications that are *already*
+  // archived. This business rule is enforced here, in the Service, not by
+  // RLS - the migration's own DELETE policy mirrors every other
+  // applications policy exactly (ownership only), per ARCHITECTURE.md's
+  // "RLS enforces ownership; Services own business rules" split. Cascades
+  // to status history/notes/interview feedback/calendar events via their
+  // own FKs (DATABASE.md) - genuinely irreversible, no restore path exists
+  // afterward, unlike archive/restore above.
+  async deletePermanently(
+    userId: string,
+    id: string
+  ): Promise<ActionResult<true>> {
+    const existing = await ApplicationRepository.findAnyById(userId, id);
+
+    if (existing.error) {
+      return {
+        success: false,
+        error: {
+          message: "Something went wrong while deleting this application.",
+          code: ERROR_CODES.INTERNAL_ERROR,
+        },
+      };
+    }
+
+    if (!existing.data) {
+      return {
+        success: false,
+        error: {
+          message: "Application not found.",
+          code: ERROR_CODES.NOT_FOUND,
+        },
+      };
+    }
+
+    if (existing.data.deleted_at === null) {
+      return {
+        success: false,
+        error: {
+          message: "Archive this application before deleting it permanently.",
+          code: ERROR_CODES.VALIDATION_ERROR,
+        },
+      };
+    }
+
+    const { error } = await ApplicationRepository.hardDelete(userId, id);
+
+    if (error) {
+      return {
+        success: false,
+        error: {
+          message: "Something went wrong while deleting this application.",
+          code: ERROR_CODES.INTERNAL_ERROR,
+        },
+      };
+    }
+
+    console.info(`Application ${id} permanently deleted by user ${userId}.`);
+    return { success: true, data: true };
   },
 
   // Backs the Archived view (IMPLEMENTATION_ORDER_V2.md Phase 26) - paginated,

@@ -668,6 +668,16 @@ timestamp
 
 ---
 
+Permanent Deletion (product decision, post-Phase 40; migrations `20260727090000_application_hard_delete.sql` and `20260727100000_application_hard_delete_cascade_fix.sql`)
+
+`applications` is the only table in this schema with a DELETE grant/RLS policy - every other table has none (see this document's own soft-delete convention). The policy enforces ownership only (`user_id = auth.uid()`), matching every other policy on this table exactly; "only an already-archived application may be deleted" is a business rule enforced by `ApplicationService.deletePermanently`, not expressed in SQL - see `BUSINESS_RULES.md` "Permanent Deletion" and `DECISIONS.md` "ADR-032."
+
+Deleting a row here cascades (via each table's own FK) to `application_status_history`, `application_notes`, `calendar_events`, and, transitively through status history, `interview_feedback`.
+
+The deletion itself must go through the `delete_application_permanently(p_user_id, p_application_id)` function (`ApplicationRepository.hardDelete`'s only caller) rather than a plain `DELETE` statement. Bug fix: `application_status_history` has had a `BEFORE DELETE` trigger since Phase 3 (`prevent_status_history_delete`) that unconditionally rejects any deletion of its rows - including ones caused by this cascade, since Postgres triggers fire on cascade-induced deletes the same as direct ones. `delete_application_permanently` sets a transaction-scoped flag (`set_config('app.cascading_application_delete', 'on', true)`) that the trigger checks and allows through only for `TG_OP = 'DELETE'` - a direct attempt to delete a status-history row still hits the original exception exactly as before; only this one, authorized cascade path is exempted.
+
+---
+
 # application_status_history
 
 Stores every status transition.

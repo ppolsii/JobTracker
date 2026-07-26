@@ -70,6 +70,13 @@ export function ApplicationDetailActions({
       </div>
 
       <ApplicationFormDialog
+        // Bug fix: same reasoning as ApplicationsTable's own edit dialog -
+        // without a `key`, Base UI keeps this dialog's `ApplicationForm`
+        // mounted after its first open, so re-opening it after a
+        // successful save would show `useForm`'s stale pre-save
+        // `defaultValues` instead of what was just saved. `updated_at`
+        // changes on every successful update, forcing a fresh mount then.
+        key={`${application.id}-${application.updated_at}`}
         open={editing}
         onOpenChange={setEditing}
         application={application}

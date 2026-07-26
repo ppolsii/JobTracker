@@ -415,6 +415,27 @@ Applications have no uniqueness rule and no reference-count rule to re-validate 
 
 Restoring never re-writes history. Status History, Notes, and every other historical record remain exactly as they were - restore only reverses the one field (deleted_at) that soft-delete itself set.
 
+---
+
+# Permanent Deletion (product decision, post-Phase 40)
+
+A deliberate, narrow exception to "Soft Deletes" above, scoped to Applications only - Companies and CV Versions are unaffected and keep no DELETE grant at all.
+
+A user may permanently delete an application only if it is already archived (`deleted_at is not null`). An active application cannot be deleted directly - it must be archived first. This is enforced by `ApplicationService.deletePermanently`, not by Row Level Security - RLS's DELETE policy on `applications` enforces ownership only (`user_id = auth.uid()`), the same "RLS enforces ownership; Services own business rules" split `ARCHITECTURE.md` draws everywhere else in this project.
+
+Permanent deletion is a real, physical `DELETE` - genuinely irreversible, with no restore path afterward. It is available to every plan; it is not Pro-gated.
+
+Deleting an application cascades, via each table's own foreign key, to remove:
+
+- Its entire Status History (every status transition ever recorded for it).
+- Its Notes.
+- Any Interview Feedback attached to it (transitively, through Status History).
+- Any Calendar events linked to it.
+
+None of this is recoverable. Archiving remains the only way to "remove without losing history" - Delete exists for the separate, explicit case where a user wants a specific application, and everything about it, permanently gone.
+
+No shadow copy of the deleted content is retained anywhere. A bare operational log line (user id, application id, timestamp - never the application's own data) is recorded for support/debugging, matching the logging style `archive()` already uses.
+
 # Time
 
 All timestamps stored in UTC.

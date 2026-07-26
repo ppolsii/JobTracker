@@ -123,6 +123,12 @@ export const restoreApplicationSchema = z.object({
 });
 export type RestoreApplicationInput = z.infer<typeof restoreApplicationSchema>;
 
+// Permanent Application Deletion (product decision, post-Phase 40).
+export const deleteApplicationSchema = z.object({
+  id: z.string().uuid(),
+});
+export type DeleteApplicationInput = z.infer<typeof deleteApplicationSchema>;
+
 // FEATURES.md Feature 6 / BUSINESS_RULES.md "Allowed State Transitions".
 // `application_date` is only actually required by ApplicationStatusService
 // when transitioning out of Wishlist for the first time - validated there,

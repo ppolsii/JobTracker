@@ -19,6 +19,8 @@ vi.mock("@/features/applications/repositories/application.repository", () => ({
     update: vi.fn(),
     archive: vi.fn(),
     restore: vi.fn(),
+    findAnyById: vi.fn(),
+    hardDelete: vi.fn(),
     listArchived: vi.fn(),
     findById: vi.fn(),
     listAllForAnalytics: vi.fn(),
@@ -329,6 +331,92 @@ describe("ApplicationService.restore", () => {
     const result = await ApplicationService.restore("user-1", "app-1");
 
     expect(result).toEqual({ success: true, data: { id: "app-1" } });
+  });
+});
+
+// Permanent Application Deletion (product decision, post-Phase 40):
+// BUSINESS_RULES.md "Permanent Deletion" - only an already-archived
+// application may be permanently deleted, enforced here (not by RLS, which
+// enforces ownership only).
+describe("ApplicationService.deletePermanently", () => {
+  it("returns Not Found when the application does not exist (or is not owned by this user)", async () => {
+    mockedApplications.findAnyById.mockResolvedValue({
+      data: null,
+      error: null,
+    } as never);
+
+    const result = await ApplicationService.deletePermanently("user-1", "app-1");
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.code).toBe(ERROR_CODES.NOT_FOUND);
+    }
+    expect(mockedApplications.hardDelete).not.toHaveBeenCalled();
+  });
+
+  it("rejects deleting an application that is still active (not archived)", async () => {
+    mockedApplications.findAnyById.mockResolvedValue({
+      data: { id: "app-1", deleted_at: null },
+      error: null,
+    } as never);
+
+    const result = await ApplicationService.deletePermanently("user-1", "app-1");
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.code).toBe(ERROR_CODES.VALIDATION_ERROR);
+      expect(result.error.message).toContain("Archive");
+    }
+    expect(mockedApplications.hardDelete).not.toHaveBeenCalled();
+  });
+
+  it("permanently deletes an already-archived application", async () => {
+    mockedApplications.findAnyById.mockResolvedValue({
+      data: { id: "app-1", deleted_at: "2026-01-01T00:00:00.000Z" },
+      error: null,
+    } as never);
+    mockedApplications.hardDelete.mockResolvedValue({
+      data: { id: "app-1" },
+      error: null,
+    } as never);
+
+    const result = await ApplicationService.deletePermanently("user-1", "app-1");
+
+    expect(result).toEqual({ success: true, data: true });
+    expect(mockedApplications.hardDelete).toHaveBeenCalledWith("user-1", "app-1");
+  });
+
+  it("returns an internal error when the existence lookup fails", async () => {
+    mockedApplications.findAnyById.mockResolvedValue({
+      data: null,
+      error: { message: "db error" },
+    } as never);
+
+    const result = await ApplicationService.deletePermanently("user-1", "app-1");
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    }
+    expect(mockedApplications.hardDelete).not.toHaveBeenCalled();
+  });
+
+  it("returns an internal error when the delete itself fails", async () => {
+    mockedApplications.findAnyById.mockResolvedValue({
+      data: { id: "app-1", deleted_at: "2026-01-01T00:00:00.000Z" },
+      error: null,
+    } as never);
+    mockedApplications.hardDelete.mockResolvedValue({
+      data: null,
+      error: { message: "db error" },
+    } as never);
+
+    const result = await ApplicationService.deletePermanently("user-1", "app-1");
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
+    }
   });
 });
 

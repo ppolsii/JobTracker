@@ -92,6 +92,12 @@ export function AdvancedAnalyticsFilterBar({
         <Select
           value={defaultValues.companyId || ANY_VALUE}
           onValueChange={(value) => setParam("companyId", value)}
+          itemToStringLabel={(value: string) =>
+            value === ANY_VALUE
+              ? "Any company"
+              : (companies.find((company) => company.id === value)?.name ??
+                value)
+          }
         >
           <SelectTrigger aria-label="Filter by company">
             <SelectValue placeholder="Company" />
@@ -109,6 +115,12 @@ export function AdvancedAnalyticsFilterBar({
         <Select
           value={defaultValues.cvVersionId || ANY_VALUE}
           onValueChange={(value) => setParam("cvVersionId", value)}
+          itemToStringLabel={(value: string) =>
+            value === ANY_VALUE
+              ? "Any CV version"
+              : (cvVersions.find((cvVersion) => cvVersion.id === value)
+                  ?.name ?? value)
+          }
         >
           <SelectTrigger aria-label="Filter by CV version">
             <SelectValue placeholder="CV version" />
