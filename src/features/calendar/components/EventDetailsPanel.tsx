@@ -5,6 +5,7 @@ import { useMemo } from "react";
 
 import { applicationDetailRoute } from "@/config/routes";
 import { ApplicationStatusTimeline } from "@/features/applications/components/ApplicationStatusTimeline";
+import { isInterviewStageStatus } from "@/features/applications/constants/application.constants";
 import type {
   ApplicationStatusHistoryEntry,
   NoteExportRow,
@@ -81,6 +82,47 @@ export function EventDetailsPanel({
     [notes, event]
   );
 
+  // Matches ApplicationStatusTimeline's `feedbackPanels` contract (a Map of
+  // pre-rendered elements, not a callback) - required for the Application
+  // Detail page's Server Component usage, and applied here too so both
+  // callers share one prop shape.
+  //
+  // BUSINESS_RULES.md "Interview Feedback": same scoping
+  // InterviewFeedbackService.create enforces - isInterviewStageStatus is the
+  // one predicate both layers call, not a separately re-derived check.
+  // Every interview-stage row gets a panel, plus any row that already has
+  // feedback from before this rule existed, so existing data is never
+  // hidden.
+  const feedbackPanels = useMemo(
+    () =>
+      new Map<string, React.ReactNode>(
+        applicationHistory
+          .filter((entry) => {
+            const entryFeedback = feedback.filter(
+              (candidate) =>
+                candidate.application_status_history_id === entry.id
+            );
+            return (
+              isInterviewStageStatus(entry.new_status) ||
+              entryFeedback.length > 0
+            );
+          })
+          .map((entry) => [
+            entry.id,
+            <InterviewFeedbackPanel
+              key={entry.id}
+              applicationId={event?.applicationId ?? ""}
+              applicationStatusHistoryId={entry.id}
+              feedback={feedback.filter(
+                (entryFeedback) =>
+                  entryFeedback.application_status_history_id === entry.id
+              )}
+            />,
+          ])
+      ),
+    [applicationHistory, feedback, event?.applicationId]
+  );
+
   return (
     <Sheet open={!!event} onOpenChange={onOpenChange}>
       <SheetContent className="flex flex-col gap-4 overflow-y-auto p-4">
@@ -124,16 +166,7 @@ export function EventDetailsPanel({
                 <h4 className="text-sm font-medium">Timeline</h4>
                 <ApplicationStatusTimeline
                   entries={applicationHistory}
-                  renderFeedback={(historyId) => (
-                    <InterviewFeedbackPanel
-                      applicationId={event.applicationId ?? ""}
-                      applicationStatusHistoryId={historyId}
-                      feedback={feedback.filter(
-                        (entry) =>
-                          entry.application_status_history_id === historyId
-                      )}
-                    />
-                  )}
+                  feedbackPanels={feedbackPanels}
                 />
               </div>
             ) : null}

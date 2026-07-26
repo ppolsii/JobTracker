@@ -83,7 +83,7 @@ describe("InterviewFeedbackService.create", () => {
   it("creates feedback once the history entry is confirmed to belong to the application", async () => {
     mockedStatusService.listHistory.mockResolvedValue({
       success: true,
-      data: [historyEntry({ id: "history-1" })],
+      data: [historyEntry({ id: "history-1", new_status: "HR Interview" })],
     });
     mockedRepository.create.mockResolvedValue({
       data: { id: "feedback-1" },
@@ -110,7 +110,7 @@ describe("InterviewFeedbackService.create", () => {
   it("defaults rating and format to null when not provided", async () => {
     mockedStatusService.listHistory.mockResolvedValue({
       success: true,
-      data: [historyEntry({ id: "history-1" })],
+      data: [historyEntry({ id: "history-1", new_status: "HR Interview" })],
     });
     mockedRepository.create.mockResolvedValue({
       data: { id: "feedback-1" },
@@ -128,6 +128,88 @@ describe("InterviewFeedbackService.create", () => {
       format: null,
       notes: "Just notes.",
     });
+  });
+});
+
+// Bug fix follow-up (Interview Feedback product/architecture review):
+// BUSINESS_RULES.md "Interview Feedback" - new feedback may only be created
+// against an interview-stage entry (INTERVIEW_STAGE_ONLY_STATUSES), enforced
+// here as the single source of truth so the UI is never relied on for this
+// validation.
+describe("InterviewFeedbackService.create - interview-stage eligibility", () => {
+  it.each(["HR Interview", "Technical Interview", "Final Interview"] as const)(
+    "allows creating feedback on a %s entry",
+    async (status) => {
+      mockedStatusService.listHistory.mockResolvedValue({
+        success: true,
+        data: [historyEntry({ id: "history-1", new_status: status })],
+      });
+      mockedRepository.create.mockResolvedValue({
+        data: { id: "feedback-1" },
+        error: null,
+      } as never);
+
+      const result = await InterviewFeedbackService.create(
+        "user-1",
+        "app-1",
+        "history-1",
+        { notes: "Went well." }
+      );
+
+      expect(result.success).toBe(true);
+      expect(mockedRepository.create).toHaveBeenCalled();
+    }
+  );
+
+  it.each(["Applied", "Wishlist", "Rejected"] as const)(
+    "rejects creating feedback on a %s entry",
+    async (status) => {
+      mockedStatusService.listHistory.mockResolvedValue({
+        success: true,
+        data: [historyEntry({ id: "history-1", new_status: status })],
+      });
+
+      const result = await InterviewFeedbackService.create(
+        "user-1",
+        "app-1",
+        "history-1",
+        { notes: "Went well." }
+      );
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.code).toBe(ERROR_CODES.VALIDATION_ERROR);
+        expect(result.error.message).toContain(status);
+      }
+      expect(mockedRepository.create).not.toHaveBeenCalled();
+    }
+  );
+});
+
+describe("InterviewFeedbackService.update - legacy non-interview-stage feedback", () => {
+  // `update` operates on an existing feedback row by its own id and never
+  // looks at the status-history entry it's attached to - so feedback
+  // created before the eligibility rule existed (e.g. against "Applied")
+  // stays fully editable forever, exactly as BUSINESS_RULES.md requires
+  // ("existing feedback ... must remain fully accessible"). This test
+  // exists to lock that guarantee in, independent of `create`'s new check.
+  it("succeeds regardless of which status the feedback's history entry has", async () => {
+    mockedRepository.update.mockResolvedValue({
+      data: { id: "feedback-1", notes: "Updated." },
+      error: null,
+    } as never);
+
+    const result = await InterviewFeedbackService.update(
+      "user-1",
+      "feedback-1",
+      { notes: "Updated." }
+    );
+
+    expect(result).toEqual({
+      success: true,
+      data: { id: "feedback-1", notes: "Updated." },
+    });
+    expect(mockedStatusService.listHistory).not.toHaveBeenCalled();
   });
 });
 

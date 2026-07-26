@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import type { Database } from "@/types/supabase";
 
 // Wide, per-status-count row shape shared by all four Phase 21 views
 // (DATABASE.md "Views") - one row per group (or a single row for
@@ -7,24 +8,27 @@ import { createClient } from "@/lib/supabase/server";
 // whichever subset of these columns a given metric needs, using the same
 // INTERVIEW_STAGE_STATUSES/OFFER_STAGE_STATUSES/UNRESPONDED_STATUSES
 // constants it already used before this phase (see analytics-calculations.ts).
-export interface StatusCountColumns {
-  wishlist_count: number;
-  applied_count: number;
-  recruiter_contact_count: number;
-  hr_interview_count: number;
-  technical_interview_count: number;
-  final_interview_count: number;
-  offer_count: number;
-  accepted_count: number;
-  rejected_count: number;
-  total_count: number;
-}
+//
+// Derived from the generated `Database` type (never hand-copied) so this
+// stays correct automatically after every `supabase gen types` regeneration.
+// Every field here is nullable - not because the underlying counts can
+// truly be missing (`count(*) filter (...)` never returns null), but
+// because Postgres view columns carry no NOT NULL guarantee the type
+// generator can prove statically, so it conservatively types every column
+// of every view as `T | null`. analytics-calculations.ts's
+// sumStatusCounts/computeGroupAnalyticsFromStatistics/deriveOverviewCounts
+// coalesce that to `0` at the one place it matters, rather than assuming
+// non-null here and letting a future regeneration silently break again.
+export type StatusCountColumns = Omit<
+  Database["public"]["Views"]["dashboard_metrics"]["Row"],
+  "user_id"
+>;
 
-export interface GroupStatisticsRow extends StatusCountColumns {
-  user_id: string;
-  id: string;
-  name: string;
-}
+// company_statistics/cv_statistics/monthly_statistics all share this exact
+// shape (DATABASE.md "Views") - one canonical alias rather than three
+// identical ones.
+export type GroupStatisticsRow =
+  Database["public"]["Views"]["company_statistics"]["Row"];
 
 const STATUS_COUNT_COLUMNS =
   "wishlist_count, applied_count, recruiter_contact_count, hr_interview_count, technical_interview_count, final_interview_count, offer_count, accepted_count, rejected_count, total_count";

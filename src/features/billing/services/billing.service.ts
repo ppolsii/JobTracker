@@ -1,9 +1,24 @@
 import { FREE_PLAN_APPLICATION_LIMIT } from "@/features/billing/constants/billing.constants";
+import { isDeveloperAccount } from "@/features/billing/constants/developer-account";
 import { BillingRepository } from "@/features/billing/repositories/billing.repository";
 import type { Subscription } from "@/features/billing/types/billing.types";
 import { ApplicationRepository } from "@/features/applications/repositories/application.repository";
+import { UserService } from "@/features/users/services/user.service";
 import { ERROR_CODES } from "@/shared/constants/error-codes";
 import type { ActionResult } from "@/types/action-result";
+
+// Developer Dogfooding (see developer-account.ts for the full reasoning):
+// resolves whether `userId` is the developer account, via `UserService` -
+// the same cross-feature "Service calls Service, never a Repository
+// directly" pattern every other Service in this codebase already uses
+// (e.g. AnalyticsService -> ApplicationService). Only ever consulted as a
+// fallback after the real subscription has already been checked and found
+// not-Pro (see both call sites below), so a real paying Pro user's request
+// never pays for this extra lookup.
+async function isDeveloperUser(userId: string): Promise<boolean> {
+  const profile = await UserService.getProfile(userId);
+  return profile.success && isDeveloperAccount(profile.data.email);
+}
 
 // IMPLEMENTATION_ORDER_V2.md Phase 24: this Service is the single, central
 // place entitlement decisions are made (BUSINESS_RULES.md "Billing").
@@ -24,7 +39,17 @@ async function getIsProPlan(userId: string): Promise<ActionResult<boolean>> {
     };
   }
 
-  return { success: true, data: data?.plan === "pro" };
+  if (data?.plan === "pro") {
+    return { success: true, data: true };
+  }
+
+  // Developer Dogfooding (see developer-account.ts) - a real Pro user never
+  // reaches this line (already returned above).
+  if (await isDeveloperUser(userId)) {
+    return { success: true, data: true };
+  }
+
+  return { success: true, data: false };
 }
 
 export const BillingService = {
@@ -43,7 +68,25 @@ export const BillingService = {
       };
     }
 
-    return { success: true, data: data ?? null };
+    const subscription = data ?? null;
+
+    // Developer Dogfooding (see developer-account.ts): the Pricing/Settings
+    // UI should show this account as a real, active Pro subscriber, exactly
+    // like every other Pro-entitlement decision this Service makes. Every
+    // other field on the real row is left untouched - there is no real
+    // Stripe customer behind this override, so "Manage subscription" will
+    // not work for it; this exception is only about unlocking Pro
+    // *features*, never about faking Stripe's own billing-portal UI.
+    if (subscription && subscription.plan !== "pro") {
+      if (await isDeveloperUser(userId)) {
+        return {
+          success: true,
+          data: { ...subscription, plan: "pro", status: "active" },
+        };
+      }
+    }
+
+    return { success: true, data: subscription };
   },
 
   // BUSINESS_RULES.md "Billing": Export requires Pro.

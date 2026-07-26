@@ -234,7 +234,25 @@ export function ApplicationForm({
                 name="cv_version_id"
                 control={control}
                 render={({ field }) => (
-                  <Select value={field.value || undefined} onValueChange={field.onChange}>
+                  // Bug fix: `field.value` starts as `""` (never `undefined`
+                  // - see defaultValues above), and must stay that way here.
+                  // `value || undefined` used to turn that `""` into a real
+                  // `undefined` on the first render, which Base UI's Select
+                  // reads as "uncontrolled - manage your own selection
+                  // state." Once a CV was picked, `field.value` became a
+                  // defined UUID, so `value` flipped from `undefined` to a
+                  // real string on a *later* render - React's "changing an
+                  // uncontrolled component to be controlled" warning, and
+                  // the reason the trigger displayed the raw UUID instead of
+                  // the matching item's label (the label lookup ran against
+                  // the Select's own internal uncontrolled state, built
+                  // during that first, undefined render, not the externally
+                  // supplied value). `field.value ?? ""` is always a defined
+                  // string, so the Select is controlled from render one -
+                  // `""` itself already means "nothing selected yet" to
+                  // Base UI (any value serializing to `''` shows the
+                  // placeholder), so no separate sentinel is needed.
+                  <Select value={field.value ?? ""} onValueChange={field.onChange}>
                     <SelectTrigger id="cv_version_id" className="w-full">
                       <SelectValue placeholder="Select a CV version" />
                     </SelectTrigger>

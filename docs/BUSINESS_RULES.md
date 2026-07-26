@@ -377,6 +377,7 @@ Append/Edit rules
 
 - Any number of feedback entries may be appended to the same Status History entry (e.g. more than one interviewer's feedback for the same stage) - not limited to one per stage.
 - A feedback entry may be edited or archived by its owner at any time. Editing or archiving feedback never modifies Status History itself, which remains append-only and immutable.
+- New feedback may only be created against a Status History entry whose status is an interview stage - see `INTERVIEW_STAGE_ONLY_STATUSES` (`src/features/applications/constants/application.constants.ts`), the single source of truth for which statuses qualify. This document intentionally does not restate that list in prose, so it can never drift out of sync if an interview stage is ever added, renamed, or removed. Enforced in `InterviewFeedbackService.create` - the UI never relies on itself for this validation. Feedback already attached to a non-interview-stage entry from before this rule existed is never hidden, invalidated, or made read-only by it - only the creation of *new* feedback is restricted; existing entries remain fully viewable, editable, and archivable.
 
 Soft deletes
 
@@ -703,6 +704,8 @@ Subscription status is a mirror of the payment provider's own state. The applica
 Downgrading, cancelling, or a failed payment must never delete historical data (Applications, Companies, CV Versions, Notes). Plan changes affect access going forward only, never past records - consistent with this document's general soft-delete/history-preservation principle.
 
 A user is on the Pro plan when, and only when, their subscription's `plan` column is `pro`. `status` (Stripe's own subscription status, mirrored as-is per Phase 23) is not itself consulted anywhere else for entitlement decisions - `BillingWebhookService` (Phase 38) is the one place `plan` is derived from `status`, whenever a Stripe subscription event is processed: `trialing`/`active`/`past_due` map to `pro` (a failed renewal charge does not immediately revoke access - it starts a grace period, retryable through the Customer Portal); every other status maps to `free`.
+
+**Developer Dogfooding exception** (post-Phase 38): the one narrow, explicitly scoped exception to the rule above. A single hardcoded email (`polgoca@gmail.com` - the application owner's own account) is always treated as Pro by `BillingService`, regardless of what its `subscriptions` row actually says, so the owner can use every Pro feature while building and testing them, before the product has any real paying customers. See `src/features/billing/constants/developer-account.ts` for the full reasoning and exact removal steps. This changes nothing about Stripe, the database, or any other account - every other user's entitlement is still decided purely by `plan`, exactly as stated above.
 
 ---
 

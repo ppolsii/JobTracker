@@ -9,6 +9,7 @@ import { ApplicationDetailActions } from "@/features/applications/components/App
 import { ApplicationNoteCreateButton } from "@/features/applications/components/ApplicationNoteCreateButton";
 import { ApplicationNotesList } from "@/features/applications/components/ApplicationNotesList";
 import { ApplicationStatusTimeline } from "@/features/applications/components/ApplicationStatusTimeline";
+import { isInterviewStageStatus } from "@/features/applications/constants/application.constants";
 import { ApplicationNoteService } from "@/features/applications/services/application-note.service";
 import { ApplicationPickerService } from "@/features/applications/services/application-picker.service";
 import { ApplicationStatusService } from "@/features/applications/services/application-status.service";
@@ -92,6 +93,35 @@ export default async function ApplicationDetailPage({
     application.salary_min,
     application.salary_max,
     application.currency
+  );
+
+  // Pre-render each row's feedback panel here (a Server Component can render
+  // a Client Component and hand the resulting element down) - see
+  // ApplicationStatusTimeline's own comment on why a callback function can't
+  // be passed across this boundary instead.
+  //
+  // BUSINESS_RULES.md "Interview Feedback": only interview-stage rows get a
+  // panel going forward (isInterviewStageStatus - the same predicate
+  // InterviewFeedbackService.create enforces, not a separately re-derived
+  // check) - except a row that already has feedback attached from before
+  // this rule existed, which keeps its panel regardless of stage so that
+  // existing data stays fully viewable/editable/archivable (never hidden).
+  const feedbackPanels = new Map<string, React.ReactNode>(
+    history
+      .filter(
+        (entry) =>
+          isInterviewStageStatus(entry.new_status) ||
+          feedbackByHistoryId.has(entry.id)
+      )
+      .map((entry) => [
+        entry.id,
+        <InterviewFeedbackPanel
+          key={entry.id}
+          applicationId={application.id}
+          applicationStatusHistoryId={entry.id}
+          feedback={feedbackByHistoryId.get(entry.id) ?? []}
+        />,
+      ])
   );
 
   return (
@@ -187,13 +217,7 @@ export default async function ApplicationDetailPage({
         <CardContent>
           <ApplicationStatusTimeline
             entries={history}
-            renderFeedback={(historyId) => (
-              <InterviewFeedbackPanel
-                applicationId={application.id}
-                applicationStatusHistoryId={historyId}
-                feedback={feedbackByHistoryId.get(historyId) ?? []}
-              />
-            )}
+            feedbackPanels={feedbackPanels}
           />
         </CardContent>
       </Card>

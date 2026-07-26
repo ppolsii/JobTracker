@@ -3,6 +3,7 @@ import type {
   InterviewFeedback,
   InterviewFormat,
 } from "@/features/interview-feedback/types/interview-feedback.types";
+import { isInterviewStageStatus } from "@/features/applications/constants/application.constants";
 import { ApplicationStatusService } from "@/features/applications/services/application-status.service";
 import { ERROR_CODES } from "@/shared/constants/error-codes";
 import type { ActionResult } from "@/types/action-result";
@@ -83,6 +84,26 @@ export const InterviewFeedbackService = {
         error: {
           message: "Status history entry not found.",
           code: ERROR_CODES.NOT_FOUND,
+        },
+      };
+    }
+
+    // BUSINESS_RULES.md "Interview Feedback": only meaningful for an actual
+    // interview stage - Rating/Format don't describe e.g. a "Wishlist" or
+    // "Rejected" transition. isInterviewStageStatus is the single predicate
+    // this Service and the timeline UI both call, so there is exactly one
+    // definition of "eligible interview stage," not one per call site. This
+    // only gates *creating new* feedback - existing feedback already
+    // attached to a non-interview stage (from before this rule existed) is
+    // never affected: `update`/`archive` below apply to an existing entry by
+    // its own id and carry no such check, so that data remains fully
+    // readable, editable, and archivable forever.
+    if (!isInterviewStageStatus(entry.new_status)) {
+      return {
+        success: false,
+        error: {
+          message: `Interview feedback can only be added to an interview stage, not "${entry.new_status}".`,
+          code: ERROR_CODES.VALIDATION_ERROR,
         },
       };
     }

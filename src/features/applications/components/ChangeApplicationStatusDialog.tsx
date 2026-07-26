@@ -133,8 +133,19 @@ export function ChangeApplicationStatusDialog({
                 name="new_status"
                 control={control}
                 render={({ field }) => (
+                  // Bug fix: same defect as ApplicationForm's CV Select -
+                  // `defaultValues.new_status` is `undefined`, and
+                  // `field.value || undefined` kept it `undefined` on the
+                  // first render (uncontrolled), then flipped to a real
+                  // status string once selected (controlled) - the classic
+                  // React "changing an uncontrolled component to be
+                  // controlled" transition, which also corrupts the
+                  // trigger's label lookup. `?? ""` keeps the Select
+                  // controlled with a defined string from render one; `""`
+                  // itself already renders the placeholder (matches no
+                  // status), so no extra sentinel value is needed.
                   <Select
-                    value={field.value || undefined}
+                    value={field.value ?? ""}
                     onValueChange={field.onChange}
                   >
                     <SelectTrigger id="new_status" className="w-full">

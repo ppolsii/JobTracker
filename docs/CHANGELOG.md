@@ -1552,6 +1552,60 @@ No schema, Repository, or business-rule changes were needed for this fix - it is
 - `analytics.service.test.ts`: added a `getSummary` describe block (previously untested directly, only via `analytics-calculations.test.ts`'s pure-function coverage) - asserts `totalApplications: 0` for a user with no applications, and that it matches the fetched application count otherwise.
 - `npm run typecheck`, `npm run lint`, `npm run test` (519 tests, 42 files), and `npm run build` all pass.
 
+### Bug fix: CV Select showed a raw UUID instead of the CV name, and warned about becoming controlled
+
+`ApplicationForm`'s CV version `Select` (and the identical pattern in `ChangeApplicationStatusDialog` and `JobImportReviewForm`) used `value={field.value || undefined}`. Since the underlying field defaults to `""` (or `undefined`), this coerced the very first render to an actual `undefined` value - Base UI's `Select` reads that as "uncontrolled, manage your own selection state." Once a value was picked, `field.value` became a real string, so `value` flipped from `undefined` to defined on a *later* render - React's "changing an uncontrolled component to be controlled" warning, and the reason the trigger displayed the raw id instead of the matching item's label (the label lookup had already run once against the component's own internal uncontrolled state). Fixed at all three call sites with `field.value ?? ""` - always a defined string, so the `Select` is controlled from the first render; `""` itself already means "nothing selected yet" to Base UI (any value serializing to `''` shows the placeholder), so no extra sentinel value was needed.
+
+### Bug fix follow-up: adapting to Supabase's generated types instead of patching them
+
+Investigating a related report (CV Library/Calendar/Goals/Pricing/Settings all showing "Something went wrong...") traced back to `src/types/supabase.ts` being out of date against the linked project's real schema - not a code defect. Regenerating it (`supabase gen types typescript --linked`) surfaced two real type mismatches, both resolved in the Repository/Service layer rather than by hand-editing the generated file (see `DECISIONS.md` "ADR-030 - Generated Type Boundaries", new this phase):
+
+- `AnalyticsRepository`'s `StatusCountColumns`/`GroupStatisticsRow` were hand-written as non-null; the generator correctly types every SQL view column as nullable (it can't prove a `count(*) filter (...)` is never null). Now derived directly from `Database["public"]["Views"][...]["Row"]`, with `analytics-calculations.ts`'s `sumStatusCounts`/`computeGroupAnalyticsFromStatistics`/`deriveOverviewCounts` coalescing to `0` at the point of use.
+- `ApplicationRepository.create`/`transitionStatus` call two RPCs whose generated `Args` types declare every parameter non-nullable, even though both functions' own SQL bodies accept and handle null (Postgres function parameters carry no NOT NULL metadata for the generator to read). Isolated with a documented `as <Fn>Args` cast at each of the two call sites - the only two RPC calls in the codebase.
+
+Also fixed in passing: `src/types/supabase.ts` had been saved as UTF-16 (a Windows PowerShell `>` redirect default, not UTF-8) - re-encoded, no content change.
+
+Also added this phase: `DECISIONS.md` "ADR-031 - CV File Storage (Supersedes ADR-018)" - ADR-018 ("The MVP will not store CV files") is marked superseded (left verbatim as the historical record) now that the CV Library stores real files.
+
+### Bug fix: Application Detail page crashed when viewing an application
+
+`applications/[id]/page.tsx` (a Server Component) passed a callback, `renderFeedback={(historyId) => <InterviewFeedbackPanel .../>}`, as a prop to `ApplicationStatusTimeline` (a Client Component). React Server Components forbid passing plain functions across that boundary - only serializable values (primitives, plain objects/arrays/Maps/Sets, and already-constructed elements) survive it. This threw on every single visit to the page, landing in the root `error.tsx` boundary. `TopNav`'s equivalent slots (`search`/`exportMenu`/`notificationBell`) were already correctly typed `React.ReactNode`, never a function, for exactly this reason - `renderFeedback` was the one place that deviated, and it went unnoticed because its only other caller (`EventDetailsPanel.tsx`) is itself a Client Component, where a function prop between two client components is completely normal.
+
+Fixed by changing the slot from a callback to `feedbackPanels: Map<string, React.ReactNode>` - both callers now pre-render one `<InterviewFeedbackPanel>` element per timeline row (an already-constructed element is serializable across the Server/Client boundary) and pass the Map down instead.
+
+### Product/architecture refinement: Interview Feedback scoped to interview stages
+
+A review (see this phase's own product/architecture discussion) concluded that letting every Status History row - including "Wishlist," "Applied," "Rejected" - accept structured interview feedback didn't match either the feature's own documented intent ("a single interview stage," per `BUSINESS_RULES.md`/`FEATURES.md`, from the start) or its field shape (a 1-5 rating and a Phone/Video/On-site/Technical/Behavioral format don't describe a non-interview transition). Free-text `application_notes` already covers "write anything, at any stage," so restricting Interview Feedback's *structured* data to actual interview stages loses no expressiveness.
+
+- `InterviewFeedbackService.create` now rejects creating feedback against a Status History entry whose status isn't an interview stage. `update`/`archive` are untouched and carry no such check, by design.
+- `applications/[id]/page.tsx` and `EventDetailsPanel.tsx` only build a `feedbackPanels` Map entry (and so only render an "Add feedback" affordance) for an interview-stage row, or a row that already has feedback attached from before this rule existed - existing feedback is never hidden, and remains fully viewable/editable/archivable regardless of the stage it's attached to.
+- No database constraint or trigger was added - this is a Service-layer business rule, consistent with every other rule in this codebase (ADR-028 "Simplicity").
+- `BUSINESS_RULES.md`/`FEATURES.md` updated to reference `INTERVIEW_STAGE_ONLY_STATUSES` by name rather than restating the eligible statuses in prose, so the documentation can't drift from the code if an interview stage is ever added or renamed.
+- Follow-up: the Service and both UI call sites initially each wrote their own `INTERVIEW_STAGE_ONLY_STATUSES.includes(status)` inline - same constant, but three independent copies of the check itself. Extracted `isInterviewStageStatus(status)` (`application.constants.ts`, next to the constant it wraps) so there is exactly one definition of "eligible interview stage," called from all three places.
+
+### Testing (Interview Feedback scoping)
+
+- `application.constants.test.ts`: new `isInterviewStageStatus` describe block - every application status, parameterized, confirming exactly the three interview stages return `true`.
+- `interview-feedback.service.test.ts`: updated the two existing `create` success tests to target an interview-stage entry (they previously used the shared `historyEntry()` fixture's default status, "Recruiter Contact," which the new rule now correctly rejects). Added: parameterized tests confirming `create` succeeds for HR Interview/Technical Interview/Final Interview and is rejected (`VALIDATION_ERROR`) for Applied/Wishlist/Rejected, and a test confirming `update` succeeds regardless of the history entry's status (legacy feedback on a non-interview stage stays editable) without even consulting `ApplicationStatusService`.
+- `npm run typecheck`, `npm run lint`, `npm run test` (535 tests, 42 files), and `npm run build` all pass.
+
+### Developer Dogfooding: the application owner's account always sees the Pro plan
+
+Requested so the application owner (`polgoca@gmail.com`) can use every Pro-gated feature while building and testing them, before the product has any real paying customers - narrowly scoped, never a general mechanism.
+
+- New `isDeveloperAccount(email)` (`src/features/billing/constants/developer-account.ts`) - a pure, hardcoded email comparison, fully documented in place (why hardcoded rather than an env var or DB flag, and the exact two-call-site removal steps for once real Pro customers exist).
+- Consulted from exactly one place, `BillingService` (a private `isDeveloperUser(userId)` helper resolving the account's email via `UserService.getProfile` - the same cross-feature "Service calls Service" pattern already used throughout this codebase) - never checked anywhere else, and never bypasses a feature gate directly: every Pro-only code path still goes through the exact same `BillingService` methods every other request does.
+  - `getIsProPlan` (the single function `requireProPlan`/`requireApplicationCapacity`/`getApplicationUsage` all funnel through): checks the real subscription first; only falls back to the developer-account check when the real answer is "not Pro," so a real paying Pro user's request never pays for the extra lookup.
+  - `getSubscriptionForUser` (backs the Pricing/Settings display): same fallback, returning the real row with only `plan`/`status` overridden to `pro`/`active` for display - every other field (including `stripe_customer_id: null`) is left exactly as stored, so "Manage subscription" correctly has nothing real to manage. This is a display-only override; nothing is written to the database.
+- No Stripe configuration, database row, or feature-gate check was modified - the exception lives entirely in `BillingService`'s own entitlement decision.
+- `BUSINESS_RULES.md` "Billing" documents this as a named, explicit exception to its own "single rule" statement, rather than silently no longer matching the code.
+
+### Testing (Developer Dogfooding)
+
+- `developer-account.test.ts` (new): the predicate matches only the exact developer email, case-sensitively, and never a missing one.
+- `billing.service.test.ts`: new "Developer Dogfooding" describe block - Pro access granted for the developer account regardless of its real (Free, or entirely absent) subscription row, unlimited application usage, `getSubscriptionForUser` showing an active-Pro display without mutating the stored row, and confirmation that no other account is ever affected and that a real Pro user's request never triggers the extra lookup.
+- `npm run typecheck`, `npm run lint`, `npm run test` (547 tests, 43 files), and `npm run build` all pass.
+
 ---
 
 ## Phase 39 — Production Readiness Audit (2026-07-25)

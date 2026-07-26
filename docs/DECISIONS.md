@@ -298,6 +298,8 @@ Prevents inconsistencies while maintaining performance.
 
 # ADR-018 — File Storage
 
+**Status: Superseded by ADR-031.** Kept below verbatim as the historical record of the MVP's original decision - see ADR-031 for what changed and why.
+
 ## Decision
 
 The MVP will not store CV files.
@@ -471,6 +473,46 @@ The architecture should be reusable for future SaaS projects.
 Business-specific logic should remain isolated from generic infrastructure whenever possible.
 
 One long-term objective is transforming this project into a reusable SaaS Boilerplate.
+
+---
+
+# ADR-030 — Generated Type Boundaries
+
+## Decision
+
+`src/types/supabase.ts` must always be fully generated (`supabase gen types typescript`), never hand-edited.
+
+The generator has two known, structural limitations. Both are handled by adapting the Repository/Service layer that consumes the generated types - never by editing the generated file itself.
+
+**RPC function arguments.** A Postgres function parameter carries no NOT NULL metadata, so the generator always types every `Functions.<name>.Args` field without `| null`, even when the function's own body explicitly accepts and handles a null argument (a plain-typed SQL parameter always accepts null at call time; only the generator's introspection has no way to know that). When a Repository must call such a function with a value that may be null, it declares a local type alias for that function's `Args` next to the call, builds the arguments object normally, and casts it to that alias immediately before the `.rpc(...)` call - with a comment explaining why the cast exists.
+
+**SQL view columns.** The generator conservatively types every column of every view as nullable, since it cannot prove a `count(*) filter (...)` (or any other view expression) is never null the way a table's own NOT NULL constraint would. Repositories backing a view derive their exported types directly from `Database["public"]["Views"][...]["Row"]` (never re-declared by hand), and the pure calculation functions that consume them coalesce nulls to sensible defaults (e.g. `0`) at the point of use.
+
+## Reason
+
+A generated file that is occasionally hand-patched stops being reproducible: the next `supabase gen types` run silently discards the patch, and whatever it fixed regresses with no warning - this is exactly what happened when `src/types/supabase.ts` was hand-maintained instead of generated, and a real schema change went unnoticed until it caused a production error. Keeping "what the generator produces" and "how the app adapts to it" in strictly separate places means regenerating types is always a safe, mechanical, zero-judgment operation, and every place the app's real behaviour diverges from what the generator can express is visible, documented, and version-controlled in application code - not buried inside a file whose entire purpose is to be freely replaceable.
+
+---
+
+# ADR-031 — CV File Storage (Supersedes ADR-018)
+
+## Decision
+
+CV versions may optionally store a real PDF file in Supabase Storage.
+
+ADR-018 ("The MVP will not store CV files. Only CV metadata will be stored.") is superseded by this decision and is no longer current policy. ADR-018 itself is left unmodified as the historical record of what the MVP originally decided and why; this ADR documents what changed and why, rather than editing that record.
+
+The change is additive, not a rewrite of what ADR-018 already established:
+
+- A CV version's name/description-only identity (ADR-018's own examples - "Backend v1," "Full Stack," etc.) is unchanged and still how a CV version is named and compared in Analytics.
+- Storage is optional retroactively: CV versions created under ADR-018 remain fully valid with no file attached. Only newly created CV versions require a file going forward - enforced by `CVVersionService` as a business rule (ADR-007), not a database constraint, so existing data needs no migration or backfill.
+- Files live in exactly one private Supabase Storage bucket (`cv-files`), never a public bucket. Every download uses a short-lived signed URL, minted only after the caller's ownership of the corresponding CV version row is verified server-side (ADR-005) - never a client-supplied path.
+
+## Reason
+
+ADR-018's original reasoning - "uploading files adds complexity without validating the business idea" - was correct for the MVP's earliest stage, when whether the product itself was worth building was still the open question, and CV *versions* (not CV *files*) were the thing that needed validating. Once real users track multiple CV versions against real applications, being unable to open the actual document undermines the feature this project already committed to: CV Analytics (ANALYTICS_ENGINE.md) ranking "which CV performs better" is far less actionable if the user can't also open the exact file behind those numbers.
+
+The original cost/complexity trade-off no longer holds, either: Supabase Storage is part of the same Supabase Free tier this project already uses for the database and auth (ADR-020 "Cost Philosophy"), so supporting it adds no new vendor and no new recurring cost - only the complexity of a private bucket, an RLS policy scoped the same way every other table's already is, and a signed-URL download path (see `DATABASE.md` "Storage" and `ARCHITECTURE.md` "Repositories").
 
 ---
 

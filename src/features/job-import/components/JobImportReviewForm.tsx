@@ -124,8 +124,13 @@ export function JobImportReviewForm({
             name="cv_version_id"
             control={control}
             render={({ field }) => (
+              // Bug fix: same defect as ApplicationForm's CV Select - see
+              // that component's comment for the full explanation. `?? ""`
+              // keeps this Select controlled with a defined string from the
+              // first render, instead of `|| undefined` turning the initial
+              // `""` into an actual `undefined`.
               <Select
-                value={field.value || undefined}
+                value={field.value ?? ""}
                 onValueChange={field.onChange}
               >
                 <SelectTrigger id="cv_version_id" className="w-full">

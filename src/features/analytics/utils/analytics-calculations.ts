@@ -294,12 +294,16 @@ const STATUS_COUNT_COLUMN_BY_STATUS: Record<
   Rejected: "rejected_count",
 };
 
+// Every column of StatusCountColumns is nullable per the generated view
+// types (see analytics.repository.ts's own comment on why) even though a
+// `count(*) filter (...)` is never actually null - coalesced to 0 here,
+// the one place that matters, rather than assumed non-null upstream.
 function sumStatusCounts(
   row: StatusCountColumns,
   statuses: ApplicationStatus[]
 ): number {
   return statuses.reduce(
-    (sum, status) => sum + row[STATUS_COUNT_COLUMN_BY_STATUS[status]],
+    (sum, status) => sum + (row[STATUS_COUNT_COLUMN_BY_STATUS[status]] ?? 0),
     0
   );
 }
@@ -329,24 +333,31 @@ export function computeGroupAnalyticsFromStatistics(
   }
 
   return statisticsRows.map((row) => {
-    const responses = row.total_count - sumStatusCounts(row, UNRESPONDED_STATUSES);
+    // `id`/`name`/`total_count` etc. are nullable per the generated view
+    // types (see analytics.repository.ts) though never actually null in
+    // practice (a GROUP BY key or a count column) - coalesced here so the
+    // clean, non-null GroupAnalyticsRow output this function promises
+    // never leaks that generator-level nullability further downstream.
+    const id = row.id ?? "";
+    const totalCount = row.total_count ?? 0;
+    const responses = totalCount - sumStatusCounts(row, UNRESPONDED_STATUSES);
     const interviews = sumStatusCounts(row, INTERVIEW_STAGE_STATUSES);
     const offers = sumStatusCounts(row, OFFER_STAGE_STATUSES);
 
     return {
-      id: row.id,
-      name: row.name,
-      applications: row.total_count,
+      id,
+      name: row.name ?? "",
+      applications: totalCount,
       responses,
       interviews,
       offers,
-      accepted: row.accepted_count,
-      rejected: row.rejected_count,
-      responseRate: toRate(responses, row.total_count),
-      interviewRate: toRate(interviews, row.total_count),
-      offerRate: toRate(offers, row.total_count),
+      accepted: row.accepted_count ?? 0,
+      rejected: row.rejected_count ?? 0,
+      responseRate: toRate(responses, totalCount),
+      interviewRate: toRate(interviews, totalCount),
+      offerRate: toRate(offers, totalCount),
       averageResponseTimeDays: computeAverageResponseTimeDays(
-        appsByGroup.get(row.id) ?? [],
+        appsByGroup.get(id) ?? [],
         historyFacts
       ),
     };
@@ -368,12 +379,16 @@ export function deriveOverviewCounts(row: StatusCountColumns | null): {
   if (!row) {
     return { total: 0, interviews: 0, offers: 0, accepted: 0, responded: 0 };
   }
+  // `total_count`/`accepted_count` are nullable per the generated view
+  // types (never actually null - see analytics.repository.ts) - coalesced
+  // here, same as sumStatusCounts already does for the other counts.
+  const total = row.total_count ?? 0;
   return {
-    total: row.total_count,
+    total,
     interviews: sumStatusCounts(row, INTERVIEW_STAGE_STATUSES),
     offers: sumStatusCounts(row, OFFER_STAGE_STATUSES),
-    accepted: row.accepted_count,
-    responded: row.total_count - sumStatusCounts(row, UNRESPONDED_STATUSES),
+    accepted: row.accepted_count ?? 0,
+    responded: total - sumStatusCounts(row, UNRESPONDED_STATUSES),
   };
 }
 

@@ -14,6 +14,25 @@ import type { Database } from "@/types/supabase";
 type ApplicationInsert = Database["public"]["Tables"]["applications"]["Insert"];
 type ApplicationUpdate = Database["public"]["Tables"]["applications"]["Update"];
 
+// The generated `Args` type for both RPCs below declares every parameter as
+// non-nullable (e.g. `p_application_date: string`), because Postgres
+// function parameters carry no NOT NULL metadata for `supabase gen types`
+// to read - unlike a table/view column, a plain-typed SQL function
+// parameter always accepts NULL at call time regardless of what the
+// generated type says. Both functions' own SQL bodies (see
+// supabase/migrations/20260720090000_atomic_application_writes.sql)
+// explicitly branch on a null application_date/job_url/work_mode/etc. -
+// that's how a Wishlist application with no date yet gets created, and how
+// an optional field gets cleared. This is a known, structural limitation of
+// the generator for RPC args specifically (not a gap in this repository's
+// own logic), so the cast is isolated to these two call sites rather than
+// hand-edited into the generated file, which must stay reproducible by
+// re-running `supabase gen types` at any time.
+type CreateApplicationWithGenesisArgs =
+  Database["public"]["Functions"]["create_application_with_genesis"]["Args"];
+type TransitionApplicationStatusArgs =
+  Database["public"]["Functions"]["transition_application_status"]["Args"];
+
 const APPLICATION_COLUMNS =
   "id, user_id, company_id, cv_version_id, position, job_url, location, work_mode, employment_type, source, salary_min, salary_max, currency, application_date, current_status, response_date, offer_salary, rejection_reason, created_at, updated_at, deleted_at";
 
@@ -55,7 +74,10 @@ export const ApplicationRepository = {
   // writes exactly as it did for the two separate calls this replaced.
   async create(payload: ApplicationInsert) {
     const supabase = await createClient();
-    return supabase.rpc("create_application_with_genesis", {
+    // The `as` cast bridges the generator's known Args-nullability gap
+    // (see this file's own comment above `CreateApplicationWithGenesisArgs`)
+    // - every `?? null` below is intentional and already required today.
+    const args = {
       p_user_id: payload.user_id,
       p_company_id: payload.company_id,
       p_cv_version_id: payload.cv_version_id,
@@ -69,7 +91,8 @@ export const ApplicationRepository = {
       p_salary_min: payload.salary_min ?? null,
       p_salary_max: payload.salary_max ?? null,
       p_currency: payload.currency ?? DEFAULT_CURRENCY,
-    });
+    } as CreateApplicationWithGenesisArgs;
+    return supabase.rpc("create_application_with_genesis", args);
   },
 
   // Backs both the "General Information" section of the Application Detail
@@ -114,13 +137,15 @@ export const ApplicationRepository = {
     applicationDate?: string
   ) {
     const supabase = await createClient();
-    return supabase.rpc("transition_application_status", {
+    // Same generator gap as `create` above - `TransitionApplicationStatusArgs`.
+    const args = {
       p_user_id: userId,
       p_application_id: applicationId,
       p_previous_status: previousStatus,
       p_new_status: newStatus,
       p_application_date: applicationDate ?? null,
-    });
+    } as TransitionApplicationStatusArgs;
+    return supabase.rpc("transition_application_status", args);
   },
 
   async archive(userId: string, id: string) {

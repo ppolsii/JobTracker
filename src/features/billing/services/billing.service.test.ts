@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FREE_PLAN_APPLICATION_LIMIT } from "@/features/billing/constants/billing.constants";
 import { BillingRepository } from "@/features/billing/repositories/billing.repository";
 import { BillingService } from "@/features/billing/services/billing.service";
 import { ApplicationRepository } from "@/features/applications/repositories/application.repository";
+import { UserService } from "@/features/users/services/user.service";
 import { ERROR_CODES } from "@/shared/constants/error-codes";
 
 vi.mock("@/features/billing/repositories/billing.repository", () => ({
@@ -18,8 +19,25 @@ vi.mock("@/features/applications/repositories/application.repository", () => ({
   },
 }));
 
+vi.mock("@/features/users/services/user.service", () => ({
+  UserService: {
+    getProfile: vi.fn(),
+  },
+}));
+
 const mockedBilling = vi.mocked(BillingRepository);
 const mockedApplications = vi.mocked(ApplicationRepository);
+const mockedUsers = vi.mocked(UserService);
+
+// Every test below is about a non-developer account unless it says
+// otherwise - set once here so the many existing tests that predate the
+// Developer Dogfooding fallback don't each need to configure it themselves.
+beforeEach(() => {
+  mockedUsers.getProfile.mockResolvedValue({
+    success: true,
+    data: { email: "someone-else@example.com" } as never,
+  });
+});
 
 function subscriptionRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -51,7 +69,7 @@ describe("BillingService.requireProPlan", () => {
     }
   });
 
-  it("allows a Pro plan user", async () => {
+  it("allows a Pro plan user, without consulting the developer-account fallback", async () => {
     mockedBilling.getByUserId.mockResolvedValue({
       data: subscriptionRow({ plan: "pro" }),
       error: null,
@@ -60,6 +78,10 @@ describe("BillingService.requireProPlan", () => {
     const result = await BillingService.requireProPlan("user-1");
 
     expect(result.success).toBe(true);
+    // A real Pro user's request never pays for the extra lookup - see
+    // billing.service.ts's own comment on why this check is ordered after
+    // the real subscription check, not before it.
+    expect(mockedUsers.getProfile).not.toHaveBeenCalled();
   });
 
   it("denies a user with no subscription row at all", async () => {
@@ -240,5 +262,145 @@ describe("BillingService.getApplicationUsage", () => {
       expect(result.error.code).toBe(ERROR_CODES.INTERNAL_ERROR);
     }
     expect(mockedApplications.countByStatuses).not.toHaveBeenCalled();
+  });
+});
+
+// Developer Dogfooding (see developer-account.ts): "Only this account
+// should receive the Pro plan automatically. All other users must continue
+// using the normal billing flow."
+describe("BillingService - Developer Dogfooding", () => {
+  it("grants Pro access to the developer account even though its real subscription is Free", async () => {
+    mockedBilling.getByUserId.mockResolvedValue({
+      data: subscriptionRow({ plan: "free" }),
+      error: null,
+    } as never);
+    mockedUsers.getProfile.mockResolvedValue({
+      success: true,
+      data: { email: "polgoca@gmail.com" } as never,
+    });
+
+    const result = await BillingService.requireProPlan("user-1");
+
+    expect(result.success).toBe(true);
+  });
+
+  it("grants Pro access to the developer account even with no subscription row at all", async () => {
+    mockedBilling.getByUserId.mockResolvedValue({ data: null, error: null } as never);
+    mockedUsers.getProfile.mockResolvedValue({
+      success: true,
+      data: { email: "polgoca@gmail.com" } as never,
+    });
+
+    const result = await BillingService.requireApplicationCapacity("user-1");
+
+    expect(result.success).toBe(true);
+    expect(mockedApplications.countByStatuses).not.toHaveBeenCalled();
+  });
+
+  it("does not grant Pro access to any other Free plan account", async () => {
+    mockedBilling.getByUserId.mockResolvedValue({
+      data: subscriptionRow({ plan: "free" }),
+      error: null,
+    } as never);
+    mockedUsers.getProfile.mockResolvedValue({
+      success: true,
+      data: { email: "not-the-developer@example.com" } as never,
+    });
+
+    const result = await BillingService.requireProPlan("user-1");
+
+    expect(result.success).toBe(false);
+  });
+
+  it("reports unlimited usage for the developer account, same as a real Pro user", async () => {
+    mockedBilling.getByUserId.mockResolvedValue({
+      data: subscriptionRow({ plan: "free" }),
+      error: null,
+    } as never);
+    mockedUsers.getProfile.mockResolvedValue({
+      success: true,
+      data: { email: "polgoca@gmail.com" } as never,
+    });
+    mockedApplications.countByStatuses.mockResolvedValue({
+      count: 42,
+      error: null,
+    } as never);
+
+    const result = await BillingService.getApplicationUsage("user-1");
+
+    expect(result).toEqual({ success: true, data: { used: 42, limit: null } });
+  });
+
+  describe("getSubscriptionForUser", () => {
+    it("shows the developer account as an active Pro subscriber for display, without touching the stored row", async () => {
+      mockedBilling.getByUserId.mockResolvedValue({
+        data: subscriptionRow({
+          plan: "free",
+          status: null,
+          stripe_customer_id: null,
+        }),
+        error: null,
+      } as never);
+      mockedUsers.getProfile.mockResolvedValue({
+        success: true,
+        data: { email: "polgoca@gmail.com" } as never,
+      });
+
+      const result = await BillingService.getSubscriptionForUser("user-1");
+
+      expect(result).toEqual({
+        success: true,
+        data: subscriptionRow({
+          plan: "pro",
+          status: "active",
+          stripe_customer_id: null,
+        }),
+      });
+    });
+
+    it("does not override an already-real subscription, and never consults the developer-account fallback for one", async () => {
+      mockedBilling.getByUserId.mockResolvedValue({
+        data: subscriptionRow({ plan: "pro", status: "active" }),
+        error: null,
+      } as never);
+
+      const result = await BillingService.getSubscriptionForUser("user-1");
+
+      expect(result).toEqual({
+        success: true,
+        data: subscriptionRow({ plan: "pro", status: "active" }),
+      });
+      expect(mockedUsers.getProfile).not.toHaveBeenCalled();
+    });
+
+    it("leaves a non-developer Free account exactly as stored", async () => {
+      mockedBilling.getByUserId.mockResolvedValue({
+        data: subscriptionRow({ plan: "free" }),
+        error: null,
+      } as never);
+      mockedUsers.getProfile.mockResolvedValue({
+        success: true,
+        data: { email: "not-the-developer@example.com" } as never,
+      });
+
+      const result = await BillingService.getSubscriptionForUser("user-1");
+
+      expect(result).toEqual({
+        success: true,
+        data: subscriptionRow({ plan: "free" }),
+      });
+    });
+
+    it("leaves a user with no subscription row at all as null", async () => {
+      mockedBilling.getByUserId.mockResolvedValue({ data: null, error: null } as never);
+      mockedUsers.getProfile.mockResolvedValue({
+        success: true,
+        data: { email: "polgoca@gmail.com" } as never,
+      });
+
+      const result = await BillingService.getSubscriptionForUser("user-1");
+
+      expect(result).toEqual({ success: true, data: null });
+    });
   });
 });

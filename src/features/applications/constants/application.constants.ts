@@ -132,6 +132,17 @@ export const INTERVIEW_STAGE_ONLY_STATUSES: ApplicationStatus[] = [
   "Final Interview",
 ];
 
+// BUSINESS_RULES.md "Interview Feedback": the single predicate for "is this
+// status an interview stage," reused by InterviewFeedbackService.create (may
+// new feedback be created against this status) and by the Application
+// Detail page / EventDetailsPanel (should the timeline show a feedback
+// panel at all for this row) - one function wrapping
+// INTERVIEW_STAGE_ONLY_STATUSES, not three separate `.includes()` call
+// sites independently re-deriving the same check.
+export function isInterviewStageStatus(status: ApplicationStatus): boolean {
+  return INTERVIEW_STAGE_ONLY_STATUSES.includes(status);
+}
+
 // ANALYTICS_ENGINE.md "Response Rate": "A response is considered any status
 // after Applied" - i.e. everything except these two. Used by both
 // ApplicationStatsService (Dashboard/Analytics "Responded" count) and

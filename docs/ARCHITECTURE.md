@@ -155,6 +155,8 @@ A Repository method may call a Postgres RPC function instead of issuing a query 
 
 Version 2, Phase 23 introduced a second, narrower exception: a Repository may use the Supabase service-role client (bypassing RLS) only when its caller has already been authenticated by some mechanism other than a Supabase session - e.g. a verified webhook signature - and only for the exact table/columns that caller needs. This exists because no RLS policy can express "trust this request because the application already verified it some other way." Such a Repository must live in its own file, separate from any Repository using the normal RLS-protected client for the same table, so the elevated-privilege path stays easy to find and audit in isolation (see `src/features/billing/repositories/billing-webhook.repository.ts`). Never use the service-role client to work around RLS for a normal, session-authenticated request.
 
+`src/types/supabase.ts` is always fully generated (`supabase gen types typescript`) - never hand-edited. Where the generator can't correctly express reality (RPC argument nullability, SQL view column nullability), the adaptation lives in the Repository/Service layer that consumes the generated types, not in the generated file itself - see `DECISIONS.md` "ADR-030 - Generated Type Boundaries" for the full reasoning, and `src/features/applications/repositories/application.repository.ts` / `src/features/analytics/repositories/analytics.repository.ts` for the two current examples.
+
 ---
 
 ## Database

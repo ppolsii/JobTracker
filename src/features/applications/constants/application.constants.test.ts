@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   APPLICATION_STATUS_TRANSITIONS,
+  isInterviewStageStatus,
   needsApplicationDateForTransition,
 } from "@/features/applications/constants/application.constants";
 
@@ -48,5 +49,29 @@ describe("needsApplicationDateForTransition", () => {
   it("does not require a date for transitions that are not out of Wishlist", () => {
     expect(needsApplicationDateForTransition("Applied", null)).toBe(false);
     expect(needsApplicationDateForTransition("HR Interview", null)).toBe(false);
+  });
+});
+
+// BUSINESS_RULES.md "Interview Feedback": the single predicate
+// InterviewFeedbackService.create and the Application Detail/Calendar
+// timeline UI both call, so there is exactly one definition of "eligible
+// interview stage."
+describe("isInterviewStageStatus", () => {
+  it.each(["HR Interview", "Technical Interview", "Final Interview"] as const)(
+    "treats %s as an interview stage",
+    (status) => {
+      expect(isInterviewStageStatus(status)).toBe(true);
+    }
+  );
+
+  it.each([
+    "Wishlist",
+    "Applied",
+    "Recruiter Contact",
+    "Offer",
+    "Accepted",
+    "Rejected",
+  ] as const)("does not treat %s as an interview stage", (status) => {
+    expect(isInterviewStageStatus(status)).toBe(false);
   });
 });

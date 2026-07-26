@@ -463,9 +463,13 @@ Rating (1-5) and format (Phone, Video, On-site, Technical, Behavioral) are optio
 
 Any number of feedback entries may be appended to the same stage.
 
+New feedback may only be created against an entry whose status is an interview stage - see `INTERVIEW_STAGE_ONLY_STATUSES` (`src/features/applications/constants/application.constants.ts`) for the current, single source of truth on which statuses qualify (not restated here, so this document can never drift from it). The timeline only offers the "Add feedback" action on an eligible entry, or on any entry that already has feedback attached from before this rule existed - existing feedback is never hidden.
+
 ## Acceptance Criteria
 
 Users can create, edit and archive feedback entries attached to a Status History entry.
+
+Attempting to create feedback against a non-interview-stage entry is rejected with a clear error, enforced by `InterviewFeedbackService` - never only by the UI.
 
 ---
 

@@ -7,14 +7,23 @@ import { formatDateTime } from "@/lib/utils";
 // (BUSINESS_RULES.md "Time"), which a Server Component cannot know.
 export function ApplicationStatusTimeline({
   entries,
-  renderFeedback,
+  feedbackPanels,
 }: {
   entries: ApplicationStatusHistoryEntry[];
   // IMPLEMENTATION_ORDER_V2.md Phase 30: "a feedback panel attached to each
   // Status History row." A slot the caller fills in per entry, the same
   // prop-injection pattern TopNav uses for `search`/`exportMenu` - this keeps
   // the Applications feature from importing Interview Feedback directly.
-  renderFeedback: (historyId: string) => React.ReactNode;
+  //
+  // Bug fix: a `(historyId) => ReactNode` callback here used to crash the
+  // Application Detail page - that page is a Server Component, and a plain
+  // function (unlike a `ReactNode`) can't cross the Server-to-Client
+  // boundary React Server Components enforce ("Functions cannot be passed
+  // directly to Client Components..."). `TopNav`'s own slots are already
+  // typed `React.ReactNode`, never a function, for exactly this reason -
+  // this component was the one place that deviated. The caller now
+  // pre-renders one panel per entry into a Map instead.
+  feedbackPanels: Map<string, React.ReactNode>;
 }) {
   if (entries.length === 0) {
     return (
@@ -42,7 +51,7 @@ export function ApplicationStatusTimeline({
                 {formatDateTime(entry.changed_at)}
               </time>
             </div>
-            {renderFeedback(entry.id)}
+            {feedbackPanels.get(entry.id)}
           </div>
         </li>
       ))}
