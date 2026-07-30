@@ -12,6 +12,7 @@ import { CALENDAR_EVENT_TYPE_LABELS } from "@/features/calendar/constants/calend
 import type { CalendarEventType } from "@/features/calendar/types/calendar.types";
 import { Input } from "@/shared/components/ui/input";
 import {
+  createSelectItemLabel,
   Select,
   SelectContent,
   SelectItem,
@@ -103,12 +104,9 @@ export function CalendarFilterBar({
         <Select
           value={defaultValues.companyId || ANY_VALUE}
           onValueChange={(value) => setParam("companyId", value)}
-          itemToStringLabel={(value: string) =>
-            value === ANY_VALUE
-              ? "Any company"
-              : (companies.find((company) => company.id === value)?.name ??
-                value)
-          }
+          itemToStringLabel={createSelectItemLabel(ANY_VALUE, "Company", (value) =>
+            companies.find((company) => company.id === value)?.name
+          )}
         >
           <SelectTrigger aria-label="Filter by company">
             <SelectValue placeholder="Company" />
@@ -126,6 +124,12 @@ export function CalendarFilterBar({
         <Select
           value={defaultValues.eventType || ANY_VALUE}
           onValueChange={(value) => setParam("eventType", value)}
+          itemToStringLabel={createSelectItemLabel(
+            ANY_VALUE,
+            "Event type",
+            (value) =>
+              CALENDAR_EVENT_TYPE_LABELS[value as CalendarEventType]
+          )}
         >
           <SelectTrigger aria-label="Filter by event type">
             <SelectValue placeholder="Event type" />
@@ -143,6 +147,7 @@ export function CalendarFilterBar({
         <Select
           value={defaultValues.applicationStatus || ANY_VALUE}
           onValueChange={(value) => setParam("applicationStatus", value)}
+          itemToStringLabel={createSelectItemLabel(ANY_VALUE, "Status")}
         >
           <SelectTrigger aria-label="Filter by application status">
             <SelectValue placeholder="Status" />
@@ -160,6 +165,7 @@ export function CalendarFilterBar({
         <Select
           value={defaultValues.workMode || ANY_VALUE}
           onValueChange={(value) => setParam("workMode", value)}
+          itemToStringLabel={createSelectItemLabel(ANY_VALUE, "Work mode")}
         >
           <SelectTrigger aria-label="Filter by work mode">
             <SelectValue placeholder="Work mode" />
@@ -177,6 +183,10 @@ export function CalendarFilterBar({
         <Select
           value={defaultValues.employmentType || ANY_VALUE}
           onValueChange={(value) => setParam("employmentType", value)}
+          itemToStringLabel={createSelectItemLabel(
+            ANY_VALUE,
+            "Employment type"
+          )}
         >
           <SelectTrigger aria-label="Filter by employment type">
             <SelectValue placeholder="Employment type" />

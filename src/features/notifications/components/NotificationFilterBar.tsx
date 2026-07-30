@@ -7,6 +7,7 @@ import { NOTIFICATION_CATEGORY_LABELS } from "@/features/notifications/constants
 import type { NotificationCategory } from "@/features/notifications/types/notification.types";
 import { Input } from "@/shared/components/ui/input";
 import {
+  createSelectItemLabel,
   Select,
   SelectContent,
   SelectItem,
@@ -86,6 +87,11 @@ export function NotificationFilterBar({
         <Select
           value={defaultValues.unreadOnly ? "true" : ANY_VALUE}
           onValueChange={(value) => setParam("unreadOnly", value === "true" ? "true" : null)}
+          itemToStringLabel={createSelectItemLabel(
+            ANY_VALUE,
+            "All notifications",
+            (value) => (value === "true" ? "Unread only" : undefined)
+          )}
         >
           <SelectTrigger aria-label="Filter by read state">
             <SelectValue placeholder="All notifications" />
@@ -99,13 +105,14 @@ export function NotificationFilterBar({
         <Select
           value={defaultValues.category || ANY_VALUE}
           onValueChange={(value) => setParam("category", value)}
-          itemToStringLabel={(value: string) =>
-            value === ANY_VALUE
-              ? "Any category"
-              : (NOTIFICATION_CATEGORY_LABELS[
-                  value as keyof typeof NOTIFICATION_CATEGORY_LABELS
-                ] ?? value)
-          }
+          itemToStringLabel={createSelectItemLabel(
+            ANY_VALUE,
+            "Category",
+            (value) =>
+              NOTIFICATION_CATEGORY_LABELS[
+                value as keyof typeof NOTIFICATION_CATEGORY_LABELS
+              ]
+          )}
         >
           <SelectTrigger aria-label="Filter by category">
             <SelectValue placeholder="Category" />
@@ -123,12 +130,9 @@ export function NotificationFilterBar({
         <Select
           value={defaultValues.companyId || ANY_VALUE}
           onValueChange={(value) => setParam("companyId", value)}
-          itemToStringLabel={(value: string) =>
-            value === ANY_VALUE
-              ? "Any company"
-              : (companies.find((company) => company.id === value)?.name ??
-                value)
-          }
+          itemToStringLabel={createSelectItemLabel(ANY_VALUE, "Company", (value) =>
+            companies.find((company) => company.id === value)?.name
+          )}
         >
           <SelectTrigger aria-label="Filter by company">
             <SelectValue placeholder="Company" />

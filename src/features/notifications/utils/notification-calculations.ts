@@ -403,18 +403,25 @@ export function buildNotifications(context: {
   ].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 }
 
-// Attaches persisted read/archived state (defaulting to "unread" when no
-// state row exists yet - the common case for a freshly-generated
-// notification the user has never interacted with).
+// Attaches persisted read/archived/deleted state (defaulting to "unread"
+// when no state row exists yet - the common case for a freshly-generated
+// notification the user has never interacted with). A set `deleted_at`
+// always wins over whatever the row's own `status` column holds - deletion
+// is a separate, orthogonal soft-delete marker (see the repository's own
+// comment), not a fourth `status` enum value.
 export function mergeNotificationState(
   notifications: Notification[],
-  stateRows: Pick<NotificationStateRecord, "notification_key" | "status">[]
+  stateRows: Pick<NotificationStateRecord, "notification_key" | "status" | "deleted_at">[]
 ): Notification[] {
-  const statusByKey = new Map(stateRows.map((row) => [row.notification_key, row.status]));
-  return notifications.map((notification) => ({
-    ...notification,
-    status: statusByKey.get(notification.key) ?? notification.status,
-  }));
+  const stateByKey = new Map(stateRows.map((row) => [row.notification_key, row]));
+  return notifications.map((notification) => {
+    const state = stateByKey.get(notification.key);
+    if (!state) return notification;
+    return {
+      ...notification,
+      status: state.deleted_at ? "deleted" : state.status,
+    };
+  });
 }
 
 export function filterNotifications(
@@ -439,11 +446,11 @@ export function filterNotifications(
 }
 
 // "NOTIFICATION CENTER": groups by recency relative to `today` - archived
-// notifications are excluded from the Notification Center's own grouped
-// view (they're still readable via a dedicated "archived" filter/state,
-// never through the default grouped list, mirroring how every other
-// archived business entity in this codebase is excluded from its default
-// list view).
+// and deleted notifications are both excluded from the Notification
+// Center's own grouped view (archived is still readable via a dedicated
+// "archived" filter/state, never through the default grouped list,
+// mirroring how every other archived business entity in this codebase is
+// excluded from its default list view; deleted is gone for good).
 export function groupNotificationsByRecency(
   notifications: Notification[],
   today: Date
@@ -459,7 +466,7 @@ export function groupNotificationsByRecency(
   };
 
   for (const notification of notifications) {
-    if (notification.status === "archived") continue;
+    if (notification.status === "archived" || notification.status === "deleted") continue;
 
     const dateKey = notification.timestamp.slice(0, 10);
     if (dateKey === todayKey) {

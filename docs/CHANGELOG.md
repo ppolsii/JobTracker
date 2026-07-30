@@ -1709,3 +1709,59 @@ A grep for every `Select` following the `value={x.id}` (or equivalent lookup-bas
 
 - `npm run typecheck`, `npm run lint`, `npm run test` (552 tests, 43 files - no new tests; this is a display-only, DOM-rendering fix with no new pure logic to unit-test), and `npm run build` all pass.
 - Not verified in a browser in this environment (no live dev server/browser available here) - verified by reading Base UI's own label-resolution source directly and confirming every fixed Select now supplies the mapping it was missing. Manual UI confirmation is still recommended before considering this closed.
+
+---
+
+## UX improvement: pre-fill today's date in the Change Status dialog (2026-07-27)
+
+`ChangeApplicationStatusDialog`'s "Application date" field (shown only when leaving Wishlist without a date already set, per `needsApplicationDateForTransition`) started blank, requiring the user to type today's date on the single most common path - changing status to "Applied" the same day it happened.
+
+Now pre-filled with the browser's local today's date whenever the dialog is (re)opened, via a `useEffect` gated on `open` (not on every render) so it only fires on a fresh open - it never overwrites a date the user has already edited before submitting. The field remains a plain, fully editable `type="date"` input for recording a historical transition. Uses a new local `todayLocalDateString()` helper (local `getFullYear`/`getMonth`/`getDate`, not `toISOString().slice(0, 10)`) - deliberately not the schema's own `todayISODate()` in `application.schema.ts`, which is UTC-based and exists for the server-safe "not in the future" check, not for displaying "today" to a specific user in their own timezone.
+
+### Testing
+
+- `npm run typecheck`, `npm run lint`, `npm run test` (552 tests, 43 files - unchanged; no new pure/business logic to unit-test, and this component has no existing test file, consistent with this suite's no-component-rendering-tests philosophy), and `npm run build` all pass.
+- Not verified in a browser in this environment - verified by code reading only (the `open`-gated effect, the local-date helper, and confirming the field's `register`-based binding is untouched so manual edits still flow through normally).
+
+---
+
+## UX improvement + bug fix: filter Selects showed the raw sentinel value, and every filter's own "any" option had the same label mismatch (2026-07-27)
+
+Follow-up to the previous Select label-resolution fix. Two related issues in every filter bar's Selects:
+
+1. **Bug, not previously caught**: every filter Select uses a sentinel value for "nothing selected" (`ANY_VALUE = "__any__"`, or `NONE_VALUE` in a couple of forms) alongside a differently-worded `SelectItem` (e.g. `<SelectItem value="__any__">Any status</SelectItem>`). The earlier fix only added `itemToStringLabel` to the id-based Selects (Company/CV) - the enum-based ones (Status, Source, Work mode, Employment type, calendar Event type, the Notifications read-state toggle) were left alone on the reasoning that their *real* options already have `value === label`. That reasoning missed that the *sentinel* item itself never satisfies `value === label` - so every one of those Selects showed the literal string `__any__` in the trigger whenever no filter was applied, rather than "Any status"/"Any work mode"/etc.
+2. **UX improvement (this request)**: showing "Any company"/"Any status" when nothing is selected is redundant with the filter's own label - simplified to just the bare filter name (e.g. "Company", "Status"), matching each Select's existing `placeholder` prop text. Once a real value is selected, the trigger still shows that value's own name/label, unchanged from the previous fix.
+
+Rather than repeating the same "sentinel -> plain label, else resolve the real value" ternary at every call site (11 Selects across 4 filter bars, plus 4 more `NONE_VALUE`-style pickers found during the same sweep), extracted one shared `createSelectItemLabel(sentinelValue, sentinelLabel, resolve?)` helper into `src/shared/components/ui/select.tsx` (alongside the primitives it composes) and pointed every affected Select's `itemToStringLabel` at it.
+
+Also fixed two more instances of the underlying label-mismatch bug found while sweeping every `Select` in the app for it (neither uses a sentinel, so neither was caught by the earlier fix, which only looked at `.map()`-generated items):
+
+- `CustomEventForm.tsx`'s event "Type" Select (`value="custom"` / `"reminder"` vs. displayed "Custom Event" / "Reminder").
+- `GoalForm.tsx`'s "Metric" and "Period" Selects (raw `GOAL_METRIC_OPTIONS`/`GOAL_PERIOD_OPTIONS` enum values vs. their `_LABELS` lookup text).
+
+### Testing
+
+- `npm run typecheck`, `npm run lint`, `npm run test` (552 tests, 43 files - unchanged; display-only, no new pure logic), and `npm run build` all pass.
+- Not verified in a browser in this environment - verified by reading through every affected Select's new `itemToStringLabel` and confirming it covers both the sentinel case and every real option.
+
+---
+
+## Bug fix: deleted notifications reappeared on the next page load (2026-07-27)
+
+Reported: "even though notifications are deleted, they don't disappear." Traced end to end rather than guessed: `NotificationRepository.deleteNotification`/`deleteAllRead` correctly set `deleted_at` on the notification's `notification_states` row (soft delete, per `BUSINESS_RULES.md`) - the write itself always succeeded. The bug was on the *next read*.
+
+Notification content is never stored - every notification is regenerated fresh, on every page load, from the same underlying source data (`NotificationService`'s own documented design). The only thing persisted is a user's read/archived/deleted *interaction*, in `notification_states`, reattached to the regenerated notification by its deterministic `key`. `NotificationRepository.listStatesForUser` filtered `.is("deleted_at", null)` - meaning a deleted row was excluded from every future query of that user's states. So the next time the same underlying condition regenerated the same notification key (which is most of the time - a stale application stays stale, "no goals yet" stays true until a goal is created), there was no state row left to reattach, and `mergeNotificationState` defaulted it right back to `"unread"` - indistinguishable from the notification never having been deleted at all. "Archive" never had this problem, since archived rows were never filtered out of that same query.
+
+Fixed across the three layers this bug actually spans:
+
+- `NotificationRepository.listStatesForUser` - removed the `.is("deleted_at", null)` filter; a user's deleted state rows must stay queryable.
+- `mergeNotificationState` (`notification-calculations.ts`) - now derives the notification's status as `"deleted"` whenever the state row's `deleted_at` is set, regardless of whatever value its own `status` column carries (the two columns are orthogonal - `deleteNotification` never touches `status`).
+- `groupNotificationsByRecency` - now excludes `status === "deleted"` from every group, the same way it already excluded `"archived"`.
+- `NotificationStatus` (`notification.types.ts`) widened to include `"deleted"` as an app-level value - the DB enum itself still only has `unread`/`read`/`archived`; `deleted_at` is a separate, orthogonal soft-delete marker, the same convention as every other soft-deletable table in this app.
+
+### Testing
+
+- `notification-calculations.test.ts`: `mergeNotificationState` now covers a state row with `deleted_at` set overriding its own `status` column; `groupNotificationsByRecency` gained a "deleted" case alongside its existing "archived" one.
+- `notification.service.test.ts`: new regression test - a notification whose trigger condition still fires on every read (the "no goals yet" tip) stays out of the grouped result once its state row carries `deleted_at`, reproducing the exact reported scenario end-to-end at the Service layer.
+- `npm run typecheck`, `npm run lint`, `npm run test` (555 tests, 43 files - 3 new), and `npm run build` all pass.
+- Not verified in a browser or against a live Supabase project in this environment - verified by tracing the full read path (repository query -> merge -> group) and reproducing the exact failure/fix with a Service-level test using the same fixture shapes Supabase returns.

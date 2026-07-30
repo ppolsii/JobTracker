@@ -1268,6 +1268,8 @@ deleted_at
 
 timestamp
 
+The authoritative "deleted" marker - orthogonal to `status` (a deleted row's `status` column is left untouched, whatever it was). `NotificationRepository.listStatesForUser` must return rows regardless of `deleted_at` - notification content is regenerated fresh on every read (see above), so a row excluded here would lose its deleted state on the very next read and the notification would silently reappear as "unread." `mergeNotificationState` is what actually derives the app-level `"deleted"` status from this column being set.
+
 Row Level Security
 
 Users may `select`/`insert`/`update` rows where `user_id = auth.uid()`. No `delete` policy or grant exists - "Delete notification"/"Delete all read" are soft deletes via `deleted_at` (BUSINESS_RULES.md "Soft Deletes"), matching every other business entity; "Archive notification" is the distinct `status = 'archived'` value `update` already handles. A `unique (user_id, notification_key)` constraint makes every write an idempotent upsert.

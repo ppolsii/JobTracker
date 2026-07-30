@@ -94,7 +94,13 @@ export function GoalForm({ goal, onSuccess, onCancel }: GoalFormProps) {
             name="metric"
             control={control}
             render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
+              <Select
+                value={field.value}
+                onValueChange={field.onChange}
+                itemToStringLabel={(value) =>
+                  GOAL_METRIC_LABELS[value as keyof typeof GOAL_METRIC_LABELS]
+                }
+              >
                 <SelectTrigger id="metric" className="w-full">
                   <SelectValue placeholder="Select metric" />
                 </SelectTrigger>
@@ -119,7 +125,13 @@ export function GoalForm({ goal, onSuccess, onCancel }: GoalFormProps) {
             name="period"
             control={control}
             render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
+              <Select
+                value={field.value}
+                onValueChange={field.onChange}
+                itemToStringLabel={(value) =>
+                  GOAL_PERIOD_LABELS[value as keyof typeof GOAL_PERIOD_LABELS]
+                }
+              >
                 <SelectTrigger id="period" className="w-full">
                   <SelectValue placeholder="Select period" />
                 </SelectTrigger>

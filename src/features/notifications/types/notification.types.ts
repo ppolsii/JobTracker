@@ -2,8 +2,15 @@ import type { Database } from "@/types/supabase";
 
 export type NotificationStateRecord =
   Database["public"]["Tables"]["notification_states"]["Row"];
+// The DB enum itself only has unread/read/archived - notification_states'
+// `deleted_at` column is a separate, orthogonal soft-delete marker (the same
+// convention as every other soft-deletable table in this app), not a fourth
+// enum value. "deleted" is an app-level status `mergeNotificationState`
+// derives from `deleted_at` being set, never a value stored in the `status`
+// column itself.
 export type NotificationStatus =
-  Database["public"]["Enums"]["notification_status"];
+  | Database["public"]["Enums"]["notification_status"]
+  | "deleted";
 
 // "Architecture must support future notification categories": a plain
 // string union, not a database enum - adding a category later (or a new

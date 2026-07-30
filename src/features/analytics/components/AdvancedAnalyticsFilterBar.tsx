@@ -10,6 +10,7 @@ import {
 } from "@/features/applications/constants/application.constants";
 import { Input } from "@/shared/components/ui/input";
 import {
+  createSelectItemLabel,
   Select,
   SelectContent,
   SelectItem,
@@ -92,12 +93,9 @@ export function AdvancedAnalyticsFilterBar({
         <Select
           value={defaultValues.companyId || ANY_VALUE}
           onValueChange={(value) => setParam("companyId", value)}
-          itemToStringLabel={(value: string) =>
-            value === ANY_VALUE
-              ? "Any company"
-              : (companies.find((company) => company.id === value)?.name ??
-                value)
-          }
+          itemToStringLabel={createSelectItemLabel(ANY_VALUE, "Company", (value) =>
+            companies.find((company) => company.id === value)?.name
+          )}
         >
           <SelectTrigger aria-label="Filter by company">
             <SelectValue placeholder="Company" />
@@ -115,12 +113,12 @@ export function AdvancedAnalyticsFilterBar({
         <Select
           value={defaultValues.cvVersionId || ANY_VALUE}
           onValueChange={(value) => setParam("cvVersionId", value)}
-          itemToStringLabel={(value: string) =>
-            value === ANY_VALUE
-              ? "Any CV version"
-              : (cvVersions.find((cvVersion) => cvVersion.id === value)
-                  ?.name ?? value)
-          }
+          itemToStringLabel={createSelectItemLabel(
+            ANY_VALUE,
+            "CV version",
+            (value) =>
+              cvVersions.find((cvVersion) => cvVersion.id === value)?.name
+          )}
         >
           <SelectTrigger aria-label="Filter by CV version">
             <SelectValue placeholder="CV version" />
@@ -138,6 +136,7 @@ export function AdvancedAnalyticsFilterBar({
         <Select
           value={defaultValues.workMode || ANY_VALUE}
           onValueChange={(value) => setParam("workMode", value)}
+          itemToStringLabel={createSelectItemLabel(ANY_VALUE, "Work mode")}
         >
           <SelectTrigger aria-label="Filter by work mode">
             <SelectValue placeholder="Work mode" />
@@ -155,6 +154,10 @@ export function AdvancedAnalyticsFilterBar({
         <Select
           value={defaultValues.employmentType || ANY_VALUE}
           onValueChange={(value) => setParam("employmentType", value)}
+          itemToStringLabel={createSelectItemLabel(
+            ANY_VALUE,
+            "Employment type"
+          )}
         >
           <SelectTrigger aria-label="Filter by employment type">
             <SelectValue placeholder="Employment type" />
@@ -172,6 +175,7 @@ export function AdvancedAnalyticsFilterBar({
         <Select
           value={defaultValues.status || ANY_VALUE}
           onValueChange={(value) => setParam("status", value)}
+          itemToStringLabel={createSelectItemLabel(ANY_VALUE, "Status")}
         >
           <SelectTrigger aria-label="Filter by status">
             <SelectValue placeholder="Status" />

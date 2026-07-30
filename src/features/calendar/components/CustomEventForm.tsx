@@ -22,6 +22,7 @@ import {
 } from "@/shared/components/ui/field";
 import { Input } from "@/shared/components/ui/input";
 import {
+  createSelectItemLabel,
   Select,
   SelectContent,
   SelectItem,
@@ -95,7 +96,13 @@ export function CustomEventForm({
             name="type"
             control={control}
             render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
+              <Select
+                value={field.value}
+                onValueChange={field.onChange}
+                itemToStringLabel={(value) =>
+                  value === "reminder" ? "Reminder" : "Custom Event"
+                }
+              >
                 <SelectTrigger id="type" className="w-full">
                   <SelectValue placeholder="Select type" />
                 </SelectTrigger>
@@ -136,13 +143,13 @@ export function CustomEventForm({
                 onValueChange={(value) =>
                   field.onChange(value === NONE_VALUE ? undefined : value)
                 }
-                itemToStringLabel={(value: string) =>
-                  value === NONE_VALUE
-                    ? "No application"
-                    : (applicationOptions.find(
-                        (option) => option.id === value
-                      )?.label ?? value)
-                }
+                itemToStringLabel={createSelectItemLabel(
+                  NONE_VALUE,
+                  "No application",
+                  (value) =>
+                    applicationOptions.find((option) => option.id === value)
+                      ?.label
+                )}
               >
                 <SelectTrigger id="applicationId" className="w-full">
                   <SelectValue placeholder="No application" />

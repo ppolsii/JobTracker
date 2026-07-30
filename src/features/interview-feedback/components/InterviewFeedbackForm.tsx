@@ -20,6 +20,7 @@ import {
   FieldLabel,
 } from "@/shared/components/ui/field";
 import {
+  createSelectItemLabel,
   Select,
   SelectContent,
   SelectItem,
@@ -107,9 +108,11 @@ export function InterviewFeedbackForm({
                 onValueChange={(value) =>
                   field.onChange(value === NONE_VALUE ? undefined : Number(value))
                 }
-                itemToStringLabel={(value: string) =>
-                  value === NONE_VALUE ? "No rating" : `${value} / 5`
-                }
+                itemToStringLabel={createSelectItemLabel(
+                  NONE_VALUE,
+                  "No rating",
+                  (value) => `${value} / 5`
+                )}
               >
                 <SelectTrigger id="rating" className="w-full">
                   <SelectValue placeholder="No rating" />
@@ -139,6 +142,10 @@ export function InterviewFeedbackForm({
                 onValueChange={(value) =>
                   field.onChange(value === NONE_VALUE ? undefined : value)
                 }
+                itemToStringLabel={createSelectItemLabel(
+                  NONE_VALUE,
+                  "Not specified"
+                )}
               >
                 <SelectTrigger id="format" className="w-full">
                   <SelectValue placeholder="Select format" />

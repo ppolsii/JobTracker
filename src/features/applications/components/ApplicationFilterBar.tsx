@@ -20,6 +20,7 @@ import {
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import {
+  createSelectItemLabel,
   Select,
   SelectContent,
   SelectItem,
@@ -122,6 +123,7 @@ export function ApplicationFilterBar({
         <Select
           value={defaultValues.status || ANY_VALUE}
           onValueChange={(value) => setParam("status", value)}
+          itemToStringLabel={createSelectItemLabel(ANY_VALUE, "Status")}
         >
           <SelectTrigger aria-label="Filter by status">
             <SelectValue placeholder="Status" />
@@ -139,12 +141,9 @@ export function ApplicationFilterBar({
         <Select
           value={defaultValues.company_id || ANY_VALUE}
           onValueChange={(value) => setParam("company_id", value)}
-          itemToStringLabel={(value: string) =>
-            value === ANY_VALUE
-              ? "Any company"
-              : (companies.find((company) => company.id === value)?.name ??
-                value)
-          }
+          itemToStringLabel={createSelectItemLabel(ANY_VALUE, "Company", (value) =>
+            companies.find((company) => company.id === value)?.name
+          )}
         >
           <SelectTrigger aria-label="Filter by company">
             <SelectValue placeholder="Company" />
@@ -177,12 +176,13 @@ export function ApplicationFilterBar({
                 <Select
                   value={defaultValues.cv_version_id || ANY_VALUE}
                   onValueChange={(value) => setParam("cv_version_id", value)}
-                  itemToStringLabel={(value: string) =>
-                    value === ANY_VALUE
-                      ? "Any CV version"
-                      : (cvVersions.find((cvVersion) => cvVersion.id === value)
-                          ?.name ?? value)
-                  }
+                  itemToStringLabel={createSelectItemLabel(
+                    ANY_VALUE,
+                    "CV version",
+                    (value) =>
+                      cvVersions.find((cvVersion) => cvVersion.id === value)
+                        ?.name
+                  )}
                 >
                   <SelectTrigger aria-label="Filter by CV version">
                     <SelectValue placeholder="CV version" />
@@ -200,6 +200,7 @@ export function ApplicationFilterBar({
                 <Select
                   value={defaultValues.source || ANY_VALUE}
                   onValueChange={(value) => setParam("source", value)}
+                  itemToStringLabel={createSelectItemLabel(ANY_VALUE, "Source")}
                 >
                   <SelectTrigger aria-label="Filter by source">
                     <SelectValue placeholder="Source" />
@@ -217,6 +218,10 @@ export function ApplicationFilterBar({
                 <Select
                   value={defaultValues.work_mode || ANY_VALUE}
                   onValueChange={(value) => setParam("work_mode", value)}
+                  itemToStringLabel={createSelectItemLabel(
+                    ANY_VALUE,
+                    "Work mode"
+                  )}
                 >
                   <SelectTrigger aria-label="Filter by work mode">
                     <SelectValue placeholder="Work mode" />
@@ -234,6 +239,10 @@ export function ApplicationFilterBar({
                 <Select
                   value={defaultValues.employment_type || ANY_VALUE}
                   onValueChange={(value) => setParam("employment_type", value)}
+                  itemToStringLabel={createSelectItemLabel(
+                    ANY_VALUE,
+                    "Employment type"
+                  )}
                 >
                   <SelectTrigger aria-label="Filter by employment type">
                     <SelectValue placeholder="Employment type" />

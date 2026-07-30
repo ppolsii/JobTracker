@@ -11,13 +11,20 @@ const NOTIFICATION_STATE_COLUMNS =
 // table only ever holds a user's read/archived/deleted interaction with a
 // given, deterministically-keyed notification.
 export const NotificationRepository = {
+  // Bug fix: this used to filter `.is("deleted_at", null)`, which excluded a
+  // deleted notification's own state row from every future read. Since
+  // notification *content* is always freshly regenerated from source data
+  // (see notification-calculations.ts), the next page load would recreate
+  // the exact same key with no matching state row to attach - defaulting
+  // back to "unread" as if the deletion had never happened. Deleted rows
+  // must stay queryable so mergeNotificationState can keep recognizing them
+  // as deleted, exactly like archived rows already do.
   async listStatesForUser(userId: string) {
     const supabase = await createClient();
     return supabase
       .from("notification_states")
       .select(NOTIFICATION_STATE_COLUMNS)
-      .eq("user_id", userId)
-      .is("deleted_at", null);
+      .eq("user_id", userId);
   },
 
   // Idempotent by design (`unique(user_id, notification_key)`) - upserts
@@ -61,8 +68,8 @@ export const NotificationRepository = {
   // read" set deleted_at; no hard DELETE (no delete grant/policy exists on
   // this table at all). `status` isn't set here, so an upsert against an
   // existing row falls back to the column's default ('unread') - harmless,
-  // since every read path filters `deleted_at is null` first, so a deleted
-  // row's status is never inspected again.
+  // since mergeNotificationState always treats a set `deleted_at` as
+  // "deleted" regardless of whatever `status` value the row carries.
   async softDelete(userId: string, notificationKey: string) {
     const supabase = await createClient();
     return supabase

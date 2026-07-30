@@ -228,6 +228,43 @@ describe("NotificationService.getNotifications", () => {
       expect(result.data.unreadCount).toBe(0);
     }
   });
+
+  // Regression test: deleting a notification whose underlying condition is
+  // still true (here, "no goals yet" - buildGeneralNotifications keeps
+  // regenerating "general:tip_set_a_goal" every load while goalsWithProgress
+  // stays empty) used to reappear immediately, because
+  // listStatesForUser filtered out `deleted_at`-set rows entirely, so the
+  // regenerated notification had no matching state row to merge and
+  // defaulted back to "unread." The state row must now stay queryable and
+  // still be recognized as deleted on every subsequent read.
+  it("keeps a deleted notification out of the grouped result even when its trigger condition still fires on every read", async () => {
+    allowPro();
+    emptyDependencies();
+    mockedRepository.listStatesForUser.mockResolvedValue({
+      data: [
+        {
+          id: "s1",
+          user_id: "user-1",
+          notification_key: "general:tip_set_a_goal",
+          status: "unread",
+          created_at: "",
+          updated_at: "",
+          deleted_at: "2026-01-10T00:00:00.000Z",
+        },
+      ],
+      error: null,
+    } as never);
+
+    const result = await NotificationService.getNotifications("user-1", USER_CREATED_AT, {}, TODAY);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const keys = result.data.groups.flatMap((group) =>
+        group.notifications.map((n) => n.key)
+      );
+      expect(keys).not.toContain("general:tip_set_a_goal");
+    }
+  });
 });
 
 describe("NotificationService.getUnreadCount", () => {

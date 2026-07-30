@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useEffect } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -44,6 +45,17 @@ interface ChangeApplicationStatusDialogProps {
   application: ApplicationWithRelations;
 }
 
+// `type="date"` inputs need `YYYY-MM-DD` in the browser's local timezone -
+// deliberately not the schema's own `todayISODate()` (application.schema.ts),
+// which is UTC-based and meant for server-safe "not in the future"
+// validation, not for displaying "today" to a specific user.
+function todayLocalDateString(): string {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
 // BUSINESS_RULES.md "Allowed State Transitions": the Select only ever offers
 // APPLICATION_STATUS_TRANSITIONS[application.current_status] - the same
 // source of truth ApplicationStatusService enforces server-side - so an
@@ -67,6 +79,7 @@ export function ChangeApplicationStatusDialog({
     register,
     control,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<ChangeApplicationStatusInput>({
     resolver: zodResolver(changeApplicationStatusSchema),
@@ -76,6 +89,21 @@ export function ChangeApplicationStatusDialog({
       application_date: "",
     },
   });
+
+  // UX improvement: pre-fill with today's local date each time the dialog
+  // is (re)opened, so the common "change status, keep today's date, submit"
+  // path needs no typing - the field stays fully editable for logging a
+  // historical transition. Gated on `open` (not run on every render) so it
+  // never overwrites a date the user has already changed before submitting -
+  // Base UI keeps this dialog's content mounted after its first open (see
+  // ApplicationFormDialog's own comment on the same behavior), so `open`
+  // flipping to `true` is what "freshly opened" actually means here, not
+  // component mount.
+  useEffect(() => {
+    if (open && needsApplicationDate) {
+      setValue("application_date", todayLocalDateString());
+    }
+  }, [open, needsApplicationDate, setValue]);
 
   async function onSubmit(values: ChangeApplicationStatusInput) {
     const result = await changeApplicationStatusAction(values);

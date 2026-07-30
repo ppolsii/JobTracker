@@ -428,11 +428,29 @@ describe("mergeNotificationState", () => {
       { key: "b", category: "general", type: "tip", title: "t2", description: "d2", timestamp: "2026-01-01T00:00:00.000Z", status: "unread" },
     ];
     const merged = mergeNotificationState(notifications, [
-      { notification_key: "a", status: "read" },
+      { notification_key: "a", status: "read", deleted_at: null },
     ]);
 
     expect(merged.find((n) => n.key === "a")?.status).toBe("read");
     expect(merged.find((n) => n.key === "b")?.status).toBe("unread");
+  });
+
+  // Bug fix: a deleted notification's state row used to be excluded from
+  // the query entirely (NotificationRepository.listStatesForUser), so on
+  // the very next read the regenerated notification (same key, same
+  // underlying condition) had no matching state row and defaulted straight
+  // back to "unread" - the deletion silently never stuck. The row must now
+  // stay queryable, and a set `deleted_at` must always win over whatever
+  // `status` value the row happens to carry.
+  it("treats a state row with deleted_at set as deleted, regardless of its own status column", () => {
+    const notifications: Notification[] = [
+      { key: "a", category: "general", type: "welcome", title: "t", description: "d", timestamp: "2026-01-01T00:00:00.000Z", status: "unread" },
+    ];
+    const merged = mergeNotificationState(notifications, [
+      { notification_key: "a", status: "unread", deleted_at: "2026-01-10T00:00:00.000Z" },
+    ]);
+
+    expect(merged.find((n) => n.key === "a")?.status).toBe("deleted");
   });
 });
 
@@ -515,6 +533,11 @@ describe("groupNotificationsByRecency", () => {
 
   it("excludes archived notifications from every group", () => {
     const notifications = [notification("archived", "2026-01-15T00:00:00.000Z", "archived")];
+    expect(groupNotificationsByRecency(notifications, TODAY)).toEqual([]);
+  });
+
+  it("excludes deleted notifications from every group", () => {
+    const notifications = [notification("deleted", "2026-01-15T00:00:00.000Z", "deleted")];
     expect(groupNotificationsByRecency(notifications, TODAY)).toEqual([]);
   });
 

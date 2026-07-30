@@ -8,6 +8,25 @@ import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
 const Select = SelectPrimitive.Root
 
+// Base UI's Select only resolves a value to a display label via `items` or
+// `itemToStringLabel` on `Select.Root` - without one, it falls back to
+// stringifying the raw value. Every filter bar in this app renders a
+// sentinel "any" `SelectItem` (e.g. `value="__any__"`) alongside real
+// options, so this one helper builds the `itemToStringLabel` every one of
+// them needs: the plain filter name (e.g. "Company") when nothing is
+// selected, and `resolve(value)` - or `value` itself, when the option's own
+// value already is its label - once something is.
+function createSelectItemLabel(
+  anyValue: string,
+  anyLabel: string,
+  resolve?: (value: string) => string | undefined
+): (value: string) => string {
+  return (value) => {
+    if (value === anyValue) return anyLabel
+    return resolve?.(value) ?? value
+  }
+}
+
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (
     <SelectPrimitive.Group
@@ -188,6 +207,7 @@ function SelectScrollDownButton({
 }
 
 export {
+  createSelectItemLabel,
   Select,
   SelectContent,
   SelectGroup,
